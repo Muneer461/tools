@@ -1,5 +1,5 @@
 #!/bin/bash
-# Script developed by mun_eer461
+# Script developed by muneer461
 # Kali Linux tools installation script
 
 # Function to display a banner with animation
