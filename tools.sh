@@ -21,6 +21,7 @@ show_banner() {
 }
 
 # Function to install Kali Linux packages with animation
+cd
 install_packages() {
     printf "\n➣ Installing packages...\n"
     sleep 0.5
