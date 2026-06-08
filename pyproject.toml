@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zorksec"
+version = "1.0.0"
+description = "ZorkSec - SOC L1 Learning Edition: a beginner-friendly SOC learning platform"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Mohammad Muneeruddin (Muneer461 / Zork)" }]
+license = { text = "MIT" }
+dependencies = [
+    "SQLAlchemy>=2.0,<3.0",
+    "bcrypt>=4.0",
+    "cryptography>=42.0",
+    "rich>=13.0",
+    "Flask>=3.0",
+    "Flask-SocketIO>=5.3",
+    "gevent>=24.0",
+    "gevent-websocket>=0.10",
+    "Jinja2>=3.1",
+    "requests>=2.31",
+    "psutil>=5.9",
+    "distro>=1.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+tools = "zorksec.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["zorksec*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
