@@ -80,6 +80,17 @@ def cmd_discover(_args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_tui(args: argparse.Namespace) -> int:
+    """Launch the interactive terminal UI."""
+    try:
+        from zorksec.tui.app import launch
+    except ImportError as exc:
+        print(f"{_FAIL} TUI unavailable (is 'rich' installed?): {exc}")
+        return 1
+    team = getattr(args, "team", "both") or "both"
+    return launch(team=team)
+
+
 def cmd_deps(_args: argparse.Namespace) -> int:
     """Show build/runtime dependency status (Python, Docker, Go, etc.)."""
     print(f"ZorkSec dependency engine\n{'-' * 44}")
@@ -197,6 +208,9 @@ def build_parser() -> argparse.ArgumentParser:
     cat = sub.add_parser("catalog", help="list the tool catalog for a team profile")
     cat.add_argument("--team", choices=["blue", "red", "both"], default="both",
                      help="team profile to display (default: both)")
+    tui = sub.add_parser("tui", help="launch the interactive terminal UI")
+    tui.add_argument("--team", choices=["blue", "red", "both"], default="both",
+                     help="team profile to load (default: both)")
 
     return parser
 
@@ -216,11 +230,12 @@ def main(argv: list[str] | None = None) -> int:
         "catalog": cmd_catalog,
         "discover": cmd_discover,
         "deps": cmd_deps,
+        "tui": cmd_tui,
     }
     handler = dispatch.get(args.command)
     if handler is None:
-        parser.print_help()
-        return 0
+        # No subcommand: launch the interactive TUI by default.
+        return cmd_tui(args)
     try:
         return handler(args)
     except KeyboardInterrupt:

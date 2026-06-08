@@ -6,6 +6,8 @@ re-run after catalog updates without creating duplicates.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -15,6 +17,25 @@ from zorksec.repositories.tool_repository import ToolRepository
 from zorksec.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+@dataclass
+class ToolRow:
+    """A flat, session-independent snapshot of a catalog tool for the UI."""
+
+    slug: str
+    name: str
+    description: str
+    category: str
+    team: str
+    beginner_note: str
+    install_method: str
+    docs_url: str
+    license: str
+    requires_isolation: bool
+    installed: bool
+    health_status: str
+    health_score: int
 
 
 class RegistryService:
@@ -84,6 +105,31 @@ class RegistryService:
 
     def get(self, slug: str) -> ToolRegistry | None:
         return self.tools.get_by_slug(slug)
+
+    def snapshot(self, team: str = "both") -> list[ToolRow]:
+        """Return flat ToolRow snapshots (safe to use after the session closes)."""
+        rows: list[ToolRow] = []
+        for tool in self.tools.list_by_team(team):
+            status = self.tools.ensure_status(tool)
+            health = self.tools.ensure_health(tool)
+            rows.append(
+                ToolRow(
+                    slug=tool.slug,
+                    name=tool.name,
+                    description=tool.description,
+                    category=tool.category,
+                    team=tool.team,
+                    beginner_note=tool.beginner_note,
+                    install_method=tool.install_method,
+                    docs_url=tool.docs_url,
+                    license=tool.license,
+                    requires_isolation=tool.requires_isolation,
+                    installed=bool(status and status.installed),
+                    health_status=health.status if health else "unknown",
+                    health_score=health.score if health else 0,
+                )
+            )
+        return rows
 
     @staticmethod
     def catalog_size(team: str = "both") -> int:
