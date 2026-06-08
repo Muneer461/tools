@@ -226,6 +226,97 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
         )
 
     # ------------------------------------------------------------------ API
+    @app.route("/api/threatintel")
+    @_login_required
+    def api_threatintel():
+        from zorksec.services.ti_service import ThreatIntelService
+        with session_scope(settings) as db:
+            svc = ThreatIntelService(db)
+            svc.seed_sample_feed()
+            dash = svc.dashboard()
+            payload = {
+                "counts": dash["counts"],
+                "feeds": {
+                    key: [{"source": i.source, "indicator": i.indicator,
+                           "description": i.description} for i in dash[key]]
+                    for key in ("ioc", "malware", "url", "domain")
+                },
+                "sources": [{"name": s.name, "category": s.category,
+                             "note": s.beginner_note, "url": s.url} for s in svc.sources()],
+            }
+        return payload
+
+    @app.route("/api/threatintel/lookup", methods=["POST"])
+    @_login_required
+    def api_ti_lookup():
+        from zorksec.services.ti_service import ThreatIntelService
+        data = request.get_json(silent=True) or {}
+        with session_scope(settings) as db:
+            return ThreatIntelService(db).lookup(data.get("indicator", ""))
+
+    @app.route("/api/attack")
+    @_login_required
+    def api_attack():
+        from zorksec.services.attack_service import AttackService
+        with session_scope(settings) as db:
+            svc = RegistryService(db)
+            if svc.tools.count() == 0:
+                svc.seed_catalog()
+            coverage = AttackService(db).coverage_by_tactic()
+            techniques = AttackService(db).coverage_by_technique()
+            return {
+                "tactics": [{"id": t.tactic_id, "name": t.tactic, "note": t.explanation,
+                             "covered": t.covered_count, "total": t.technique_count}
+                            for t in coverage],
+                "techniques": [{"id": tc.technique_id, "name": tc.name, "tactic": tc.tactic,
+                                "explanation": tc.explanation, "tools": tc.tools}
+                               for tc in techniques],
+            }
+
+    @app.route("/api/dfir")
+    @_login_required
+    def api_dfir():
+        from zorksec.services.dfir_service import DfirService
+        return {"playbooks": [
+            {"key": p.key, "name": p.name, "summary": p.summary,
+             "steps": [{"title": s.title, "detail": s.detail, "tools": s.tools}
+                       for s in p.steps]}
+            for p in DfirService.playbooks()
+        ]}
+
+    @app.route("/api/detection/validate", methods=["POST"])
+    @_login_required
+    def api_detection_validate():
+        from zorksec.services.detection_service import DetectionService
+        data = request.get_json(silent=True) or {}
+        rule_text = data.get("rule", "")
+        event = data.get("event") or {}
+        return DetectionService.test_rule(rule_text, event)
+
+    @app.route("/api/detection/templates")
+    @_login_required
+    def api_detection_templates():
+        from zorksec.services.detection_service import DetectionService
+        return {"templates": DetectionService.templates()}
+
+    @app.route("/api/report", methods=["POST"])
+    @_login_required
+    def api_report():
+        from zorksec.services.report_service import ReportService
+        data = request.get_json(silent=True) or {}
+        with session_scope(settings) as db:
+            svc = ReportService(db, settings)
+            try:
+                path = svc.export_to_file(
+                    data.get("type", "incident"),
+                    data.get("title", "ZorkSec Report"),
+                    data.get("context", {"summary": data.get("summary", "")}),
+                    data.get("format", "markdown"),
+                )
+            except ValueError as exc:
+                return {"error": str(exc)}, 400
+            return {"path": path, "formats": ReportService.formats()}
+
     @app.route("/api/metrics")
     @_login_required
     def api_metrics():
