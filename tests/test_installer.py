@@ -62,4 +62,4 @@ def test_actual_install_sh_exists_and_executable():
     assert install.exists(), "install.sh should be generated and committed"
     content = install.read_text(encoding="utf-8")
     assert content.startswith("#!/usr/bin/env bash")
-    assert "tools-launch.sh" in content
+    assert "zorksec-launch.sh" in content

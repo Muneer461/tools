@@ -99,8 +99,17 @@ class TerminalManager:
         *,
         shell: bool = False,
         cwd: str | None = None,
+        interactive: bool = False,
+        initial_command: str | None = None,
     ) -> TerminalSession:
-        """Spawn a process attached to a PTY (or a pipe fallback)."""
+        """Spawn a process attached to a PTY (or a pipe fallback).
+
+        When ``interactive`` is True, an interactive ``bash`` login shell is
+        started so the user can type and run commands in the browser terminal.
+        If ``initial_command`` is given, it is fed into that shell as the first
+        line (e.g. the tool the user clicked "Run" on), after which the prompt
+        remains live for further input.
+        """
         self.stop(sid)  # ensure one session per sid
         session = TerminalSession(sid=sid, argv=argv, cwd=cwd)
 
@@ -111,7 +120,11 @@ class TerminalManager:
                 try:
                     if cwd:
                         os.chdir(cwd)
-                    if shell:
+                    # A sane TERM makes interactive tools (less, msfconsole) behave.
+                    os.environ.setdefault("TERM", "xterm-256color")
+                    if interactive:
+                        os.execvp("/bin/bash", ["/bin/bash", "-i"])
+                    elif shell:
                         os.execvp("/bin/bash", ["/bin/bash", "-lc", command])
                     else:
                         os.execvp(argv[0], argv)
@@ -120,10 +133,17 @@ class TerminalManager:
             else:  # parent
                 session.pid = pid
                 session.fd = fd
+                if interactive and initial_command:
+                    # Feed the tool command into the live shell, then keep the
+                    # prompt so the user can keep typing.
+                    try:
+                        os.write(fd, (initial_command + "\n").encode("utf-8"))
+                    except OSError:
+                        pass
         else:  # pragma: no cover - non-POSIX
             session.proc = subprocess.Popen(
-                command,
-                shell=shell,
+                "/bin/bash" if interactive else command,
+                shell=not interactive and shell,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -131,6 +151,12 @@ class TerminalManager:
                 text=True,
                 bufsize=1,
             )
+            if interactive and initial_command and session.proc and session.proc.stdin:
+                try:
+                    session.proc.stdin.write(initial_command + "\n")
+                    session.proc.stdin.flush()
+                except (OSError, ValueError):
+                    pass
         self._sessions[sid] = session
         return session
 

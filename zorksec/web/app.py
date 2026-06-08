@@ -428,8 +428,16 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
             socketio.emit("exit", {"code": 1}, to=sid)
             return
 
-        terminals.start(sid, argv, shell=shell, cwd=cwd)
-        socketio.emit("output", {"data": f"$ {' '.join(argv) if not shell else argv[0]}\r\n"}, to=sid)
+        # Build the command line to seed into an interactive shell. This keeps a
+        # live prompt open so the user can type and run more commands in the
+        # browser terminal (fixing the "can't type / process exits" problem).
+        initial = argv[0] if shell else " ".join(shlex.quote(a) for a in argv)
+        terminals.start(sid, argv, shell=shell, cwd=cwd,
+                        interactive=True, initial_command=initial)
+        banner = ("\r\n\x1b[1;36m[ZorkSec terminal]\x1b[0m running: "
+                  f"{initial}\r\n"
+                  "\x1b[2mType commands below. Use 'exit' to close this terminal.\x1b[0m\r\n")
+        socketio.emit("output", {"data": banner}, to=sid)
 
         def on_output(text: str) -> None:
             socketio.emit("output", {"data": text}, to=sid)
@@ -471,15 +479,69 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
     return app, socketio
 
 
+def _find_free_port(host: str, preferred: int, attempts: int = 12) -> int:
+    """Return a free TCP port.
+
+    Tries the preferred port first, then a handful of nearby/random ports so a
+    busy port (e.g. another server on 8765) never blocks startup.
+    """
+    import random
+    import socket
+
+    candidates = [preferred, preferred + 1, preferred + 2, 8080, 8000, 5000]
+    # Top up with random high ports for the remaining attempts.
+    while len(candidates) < attempts:
+        candidates.append(random.randint(20000, 59999))
+
+    for port in candidates:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                sock.bind((host, port))
+                return port
+            except OSError:
+                continue
+    # Last resort: let the OS pick any free port.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind((host, 0))
+        return sock.getsockname()[1]
+
+
+def _open_browser_when_ready(url: str, host: str, port: int) -> None:
+    """Open the default browser once the server is accepting connections.
+
+    Runs in a short-lived daemon thread so it never blocks the server. Failures
+    (e.g. headless host) are silently ignored - the URL is always printed too.
+    """
+    import socket
+    import threading
+    import time
+    import webbrowser
+
+    def _worker() -> None:
+        for _ in range(40):  # up to ~10s
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.settimeout(0.25)
+                if sock.connect_ex((host, port)) == 0:
+                    break
+            time.sleep(0.25)
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+
 def run_web(host: str | None = None, port: int | None = None,
-            settings: Settings | None = None) -> int:
-    """Run the dashboard with a graceful Ctrl+C shutdown."""
+            settings: Settings | None = None, open_browser: bool = True) -> int:
+    """Run the dashboard: auto-pick a free port, open the browser, graceful Ctrl+C."""
     settings = settings or get_settings()
     app, socketio = create_app(settings)
 
     # Beginner-safe binding: stay on localhost until the default password is changed.
     bind_host = host or settings.web_host
-    bind_port = port or settings.web_port
+    preferred_port = port or settings.web_port
 
     with session_scope(settings) as db:
         auth = AuthService(db, settings)
@@ -490,8 +552,20 @@ def run_web(host: str | None = None, port: int | None = None,
                        bind_host)
         bind_host = "127.0.0.1"
 
-    print(f"ZorkSec dashboard: http://{bind_host}:{bind_port}  (Ctrl+C to stop)")
+    # Auto-select a free port so a busy port never blocks startup.
+    bind_port = _find_free_port(bind_host, preferred_port)
+    if bind_port != preferred_port:
+        logger.info("Port %s busy; using free port %s instead.", preferred_port, bind_port)
+
+    url = f"http://{bind_host}:{bind_port}"
+    print(f"ZorkSec dashboard: {url}  (Ctrl+C to stop)")
+    if bind_port != preferred_port:
+        print(f"(port {preferred_port} was busy - automatically switched to {bind_port})")
     print(f"Login: {settings.default_username} / {settings.default_password}")
+
+    if open_browser:
+        _open_browser_when_ready(url, bind_host, bind_port)
+
     try:
         socketio.run(app, host=bind_host, port=bind_port)
     except KeyboardInterrupt:

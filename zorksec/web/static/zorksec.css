@@ -91,3 +91,136 @@ th { color: var(--muted); font-weight: 600; }
   padding: 10px 12px; border-radius: 8px; font-size: 13px; }
 .ok-box { background: rgba(54,211,153,0.12); border: 1px solid var(--ok); color: #c9ffe9;
   padding: 10px 12px; border-radius: 8px; font-size: 13px; }
+
+
+/* ==========================================================================
+   ZorkSec animations & polished theme layer
+   ========================================================================== */
+
+/* Animated gradient backdrop using the active theme accent. */
+body {
+  background:
+    radial-gradient(1200px 600px at 110% -10%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 55%),
+    var(--bg);
+  background-attachment: fixed;
+}
+
+/* --- keyframes ----------------------------------------------------------- */
+@keyframes zs-fade-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes zs-pop {
+  0%   { opacity: 0; transform: scale(0.96); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes zs-glow {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 40%, transparent); }
+  50%      { box-shadow: 0 0 18px 2px color-mix(in srgb, var(--accent) 45%, transparent); }
+}
+@keyframes zs-sheen {
+  0%   { background-position: -160% 0; }
+  100% { background-position: 260% 0; }
+}
+@keyframes zs-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes zs-blink { 50% { opacity: 0.35; } }
+
+/* --- sidebar ------------------------------------------------------------- */
+.sidebar h1 {
+  background: linear-gradient(90deg, var(--accent), #fff 45%, var(--accent));
+  background-size: 220% auto;
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: zs-sheen 6s linear infinite;
+}
+.sidebar .cat { transition: background .18s ease, transform .18s ease, padding-left .18s ease; }
+.sidebar .cat:hover { transform: translateX(3px); padding-left: 14px; }
+.sidebar .cat.active {
+  box-shadow: inset 3px 0 0 0 var(--accent);
+}
+
+/* --- entrance animations ------------------------------------------------- */
+.metric { animation: zs-pop .45s ease both; }
+.cards .metric:nth-child(2) { animation-delay: .06s; }
+.cards .metric:nth-child(3) { animation-delay: .12s; }
+.cards .metric:nth-child(4) { animation-delay: .18s; }
+
+.panel { animation: zs-fade-up .5s ease both; }
+
+.grid .tool { animation: zs-fade-up .45s ease both; }
+.grid .tool:nth-child(3n+2) { animation-delay: .05s; }
+.grid .tool:nth-child(3n)   { animation-delay: .1s; }
+
+/* --- interactive cards --------------------------------------------------- */
+.tool {
+  transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+}
+.tool:hover {
+  transform: translateY(-4px);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: 0 10px 26px -12px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.metric {
+  position: relative; overflow: hidden;
+  transition: transform .2s ease;
+}
+.metric:hover { transform: translateY(-3px); }
+.metric .v { transition: color .2s ease; }
+
+/* Animated value pulse when metrics update (toggled via .updated class). */
+.metric.updated .v { animation: zs-glow 1s ease; }
+
+/* --- buttons ------------------------------------------------------------- */
+button {
+  position: relative; overflow: hidden;
+  transition: transform .12s ease, filter .15s ease, box-shadow .2s ease;
+}
+button:hover { transform: translateY(-1px); box-shadow: 0 6px 16px -8px var(--accent); }
+button:active { transform: translateY(0) scale(.98); }
+/* sheen sweep on hover */
+button::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(115deg, transparent 30%,
+    color-mix(in srgb, #fff 35%, transparent) 50%, transparent 70%);
+  background-size: 220% 100%; background-position: -160% 0;
+  opacity: 0; transition: opacity .2s ease;
+}
+button:hover::after { opacity: 1; animation: zs-sheen 1.1s ease; }
+
+/* --- badges -------------------------------------------------------------- */
+.badge { transition: transform .15s ease; }
+.badge:hover { transform: scale(1.08); }
+.badge.ok { animation: zs-pulse-ok 2.4s ease-in-out infinite; }
+@keyframes zs-pulse-ok {
+  0%,100% { box-shadow: 0 0 0 0 rgba(54,211,153,0); }
+  50%     { box-shadow: 0 0 10px 0 rgba(54,211,153,.45); }
+}
+
+/* --- status connecting spinner (terminal/header) ------------------------- */
+.spinner {
+  display: inline-block; width: 12px; height: 12px; vertical-align: middle;
+  border: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-top-color: var(--accent); border-radius: 50%;
+  animation: zs-spin .8s linear infinite;
+}
+.blink { animation: zs-blink 1.1s steps(2, start) infinite; }
+
+/* --- AI assistant chat bubbles ------------------------------------------- */
+.assistant .log .you, .assistant .log .ai {
+  display: block; padding: 6px 10px; margin: 6px 0; border-radius: 10px;
+  animation: zs-fade-up .3s ease both;
+}
+.assistant .log .you { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.assistant .log .ai  { background: rgba(255,255,255,0.05); }
+
+/* --- accessibility: respect reduced-motion ------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+}

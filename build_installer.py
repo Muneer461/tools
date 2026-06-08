@@ -4,7 +4,7 @@
 Why generate instead of hand-write: the Python files in ``zorksec/`` are already
 tested and runnable. This packager walks them and emits one idempotent bash
 installer that recreates the exact tree under /opt/zorksec, sets up a venv, and
-creates the ``tools`` command. Each embedded file uses a unique heredoc
+creates the ``zorksec`` command. Each embedded file uses a unique heredoc
 delimiter and base64 encoding so source content (quotes, ``$``, ``EOF``) can
 never corrupt the script.
 
@@ -30,12 +30,14 @@ HEADER = r"""#!/usr/bin/env bash
 # Author: Mohammad Muneeruddin (Muneer461 / Zork)
 #
 # Idempotent: safe to re-run. Creates /opt/zorksec, a Python venv, writes all
-# application files, and installs the global `tools` command.
+# application files, and installs the global `zorksec` command (plus a `tools`
+# alias for backward compatibility).
 #
 set -euo pipefail
 
 ZORKSEC_HOME="${ZORKSEC_HOME:-/opt/zorksec}"
-BIN_LINK="/usr/local/bin/tools"
+BIN_LINK="/usr/local/bin/zorksec"
+ALIAS_LINK="/usr/local/bin/tools"
 PYTHON_MIN_MAJOR=3
 PYTHON_MIN_MINOR=10
 
@@ -110,7 +112,7 @@ fi
 ok "Dependencies installed"
 
 # --- launcher + global symlink --------------------------------------------
-LAUNCHER="$ZORKSEC_HOME/tools-launch.sh"
+LAUNCHER="$ZORKSEC_HOME/zorksec-launch.sh"
 cat > "$LAUNCHER" <<'LAUNCHEOF'
 #!/usr/bin/env bash
 ZORKSEC_HOME="${ZORKSEC_HOME:-/opt/zorksec}"
@@ -118,7 +120,9 @@ exec "$ZORKSEC_HOME/.venv/bin/python" -m zorksec.cli "$@"
 LAUNCHEOF
 chmod +x "$LAUNCHER"
 ln -sf "$LAUNCHER" "$BIN_LINK"
-ok "Global command installed: tools -> $LAUNCHER"
+# Backward-compatible alias: 'tools' still works for existing users.
+ln -sf "$LAUNCHER" "$ALIAS_LINK"
+ok "Global command installed: zorksec -> $LAUNCHER (alias: tools)"
 
 # --- ownership + initialise -------------------------------------------------
 chown -R "$REAL_USER":"$REAL_USER" "$ZORKSEC_HOME" 2>/dev/null || true
@@ -131,9 +135,9 @@ chown -R "$REAL_USER":"$REAL_USER" "$ZORKSEC_HOME" 2>/dev/null || true
 printf "\n"
 ok "ZorkSec installation complete!"
 printf "%b\n" "${c_green}Next steps:${c_reset}"
-printf "  tools            # launch the interactive terminal UI\n"
-printf "  tools --web      # launch the web dashboard (http://127.0.0.1:8765)\n"
-printf "  tools doctor     # verify the environment\n"
+printf "  zorksec          # launch the interactive terminal UI\n"
+printf "  zorksec --web    # launch the web dashboard (auto-opens your browser)\n"
+printf "  zorksec doctor   # verify the environment\n"
 printf "\n  Default login: zorksec / zorksec  (you must change it on first login)\n"
 """
 

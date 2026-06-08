@@ -4,15 +4,26 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
 <style>
   body { background: #000; margin: 0; }
-  .term-head { color: var(--accent); font-family: monospace; padding: 8px 12px;
-    background: var(--panel); display:flex; justify-content: space-between; align-items:center; }
-  #term { height: calc(100vh - 40px); padding: 6px; }
+  .term-head {
+    color: var(--accent); font-family: monospace; padding: 10px 14px;
+    background: linear-gradient(90deg,
+      color-mix(in srgb, var(--accent) 22%, var(--panel)), var(--panel));
+    display:flex; justify-content: space-between; align-items:center;
+    border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+    box-shadow: 0 2px 18px -6px var(--accent);
+    animation: zs-fade-up .4s ease both;
+  }
+  .term-head .brand { font-weight: 700; letter-spacing: .5px; }
+  .term-head .brand .dot { color: var(--accent); animation: zs-blink 1.4s infinite; }
+  #term { height: calc(100vh - 46px); padding: 6px;
+          animation: zs-pop .4s ease both; }
+  #status { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
 </style>
 {% endblock %}
 {% block body %}
 <div class="term-head">
-  <span>ZorkSec &middot; {{ title }}</span>
-  <span id="status">connecting…</span>
+  <span class="brand">ZorkSec <span class="dot">&#9679;</span> {{ title }}</span>
+  <span id="status"><span class="spinner"></span> connecting…</span>
 </div>
 <div id="term"></div>
 {% endblock %}
@@ -36,15 +47,19 @@
   };
 
   socket.on('connect', () => {
-    document.getElementById('status').textContent = 'connected';
+    document.getElementById('status').innerHTML = '<span style="color:var(--ok)">&#9679;</span> connected';
     socket.emit('resize', { rows: term.rows, cols: term.cols });
     socket.emit('start', payload);
+    term.focus();
   });
   socket.on('output', (msg) => term.write(msg.data));
   socket.on('exit', (msg) => {
-    document.getElementById('status').textContent = 'exited (' + msg.code + ')';
+    document.getElementById('status').innerHTML =
+      '<span style="color:var(--warn)">&#9679;</span> exited (' + msg.code + ')';
   });
-  socket.on('disconnect', () => document.getElementById('status').textContent = 'disconnected');
+  socket.on('disconnect', () =>
+    document.getElementById('status').innerHTML =
+      '<span style="color:var(--danger)">&#9679;</span> disconnected');
 
   term.onData(data => socket.emit('input', { data }));
   addEventListener('resize', () => {

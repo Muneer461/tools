@@ -8,8 +8,8 @@ ABOUT
 -----
 ZorkSec is a beginner-friendly Security Operations Center (SOC) learning
 platform. It gives you:
-  * an interactive terminal UI (the `tools` command)
-  * a web dashboard with a built-in browser terminal
+  * an interactive terminal UI (the `zorksec` command)
+  * a web dashboard with a built-in, fully interactive browser terminal
   * a curated catalog of 70+ blue/red team tools with plain-English notes
   * Threat Intelligence, DFIR, Detection Engineering and ATT&CK workspaces
   * a reporting engine and an offline AI assistant
@@ -53,29 +53,32 @@ What it does (safe to re-run any time):
     * installs base packages (python3, venv, pip, git)
     * creates /opt/zorksec and all subfolders
     * writes the application files and a Python virtual environment
-    * installs the global `tools` command at /usr/local/bin/tools
+    * installs the global `zorksec` command at /usr/local/bin/zorksec
+      (a `tools` alias is also created for backward compatibility)
     * initialises the database, tool catalog, and default user
 
 --------------------------------------------------------------
 STEP 3 - LAUNCH ZORKSEC
 --------------------------------------------------------------
 Interactive terminal UI:
-    tools
+    zorksec
 
-Web dashboard (open the printed URL in your Kali browser):
-    tools --web
-    # then visit http://127.0.0.1:8765
+Web dashboard (auto-picks a free port AND auto-opens your browser):
+    zorksec --web
+
+    If the default port is busy, ZorkSec automatically switches to another
+    free port and prints the URL it chose, e.g. http://127.0.0.1:8765
 
 Check your environment at any time:
-    tools doctor
+    zorksec doctor
 
 Other useful commands:
-    tools catalog --team blue      # list blue-team tools
-    tools catalog --team red       # list red-team tools
-    tools deps                     # show runtime dependencies
-    tools discover                 # detect tools already installed on Kali
-    tools attack                   # show MITRE ATT&CK coverage
-    tools report --type incident --format html
+    zorksec catalog --team blue     # list blue-team tools
+    zorksec catalog --team red      # list red-team tools
+    zorksec deps                    # show runtime dependencies
+    zorksec discover                # detect tools already installed on Kali
+    zorksec attack                  # show MITRE ATT&CK coverage
+    zorksec report --type incident --format html
 
 --------------------------------------------------------------
 STEP 4 - FIRST LOGIN
@@ -88,11 +91,20 @@ You MUST change the password on first login. For safety the web dashboard
 binds to 127.0.0.1 (localhost) until the default password has been changed.
 
 --------------------------------------------------------------
+USING THE WEB TERMINAL
+--------------------------------------------------------------
+* Click "Run" (or "Install") on any tool. A new browser tab opens with a
+  live, interactive terminal.
+* The tool's command runs automatically AND you stay at a real shell prompt,
+  so you can keep typing and running more commands (e.g. nmap options).
+* Type `exit` to close the terminal session.
+
+--------------------------------------------------------------
 TROUBLESHOOTING
 --------------------------------------------------------------
 * "Python 3.10+ required": update Python (Kali 2026+ already ships 3.11+).
-* Web page won't load: confirm `tools --web` is running and use the exact
-  printed URL (http://127.0.0.1:8765).
+* Browser didn't open automatically: just open the URL ZorkSec printed.
+* Port busy: ZorkSec now auto-selects a free port - read the printed URL.
 * Permissions: run the installer with sudo. Runtime files are chown'd back
   to your normal user automatically.
 * Reset everything: sudo rm -rf /opt/zorksec, then re-run sudo ./install.sh.
@@ -101,7 +113,7 @@ TROUBLESHOOTING
 UNINSTALL
 --------------------------------------------------------------
     sudo rm -rf /opt/zorksec
-    sudo rm -f /usr/local/bin/tools
+    sudo rm -f /usr/local/bin/zorksec /usr/local/bin/tools
 
 ==============================================================
  Stay curious, practice safely, and happy hunting.  - Zork

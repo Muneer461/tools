@@ -1,11 +1,11 @@
-"""ZorkSec command-line entrypoint (the ``tools`` command).
+"""ZorkSec command-line entrypoint (the ``zorksec`` command).
 
 Subcommands implemented in Chunk 1:
-  * ``tools init``    - create directories, initialise the DB, provision default user
-  * ``tools doctor``  - validate environment, permissions, dependencies, DB integrity
-  * ``tools version`` - print version information
+  * ``zorksec init``    - create directories, initialise the DB, provision default user
+  * ``zorksec doctor``  - validate environment, permissions, dependencies, DB integrity
+  * ``zorksec version`` - print version information
 
-Later chunks add ``tools`` (TUI) and ``tools --web`` (dashboard).
+Later chunks add ``zorksec`` (TUI) and ``zorksec --web`` (dashboard).
 """
 
 from __future__ import annotations
@@ -177,7 +177,7 @@ def cmd_doctor(_args: argparse.Namespace) -> int:
             print(f"{_FAIL} Database error: {exc}")
             problems += 1
     else:
-        print(f"{_WARN} Database not initialised yet - run 'tools init'")
+        print(f"{_WARN} Database not initialised yet - run 'zorksec init'")
         warnings += 1
 
     # 5) Master key permissions.
@@ -241,7 +241,7 @@ def _module_available(name: str) -> bool:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="tools",
+        prog="zorksec",
         description=f"{__app_name__} - command-line interface",
     )
     parser.add_argument("--version", action="store_true", help="print version and exit")
