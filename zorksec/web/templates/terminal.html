@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}ZorkSec Terminal - {{ title }}{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+<style>
+  body { background: #000; margin: 0; }
+  .term-head { color: var(--accent); font-family: monospace; padding: 8px 12px;
+    background: var(--panel); display:flex; justify-content: space-between; align-items:center; }
+  #term { height: calc(100vh - 40px); padding: 6px; }
+</style>
+{% endblock %}
+{% block body %}
+<div class="term-head">
+  <span>ZorkSec &middot; {{ title }}</span>
+  <span id="status">connecting…</span>
+</div>
+<div id="term"></div>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+  const term = new Terminal({ cursorBlink: true, fontSize: 14,
+    theme: { background: '#000000', foreground: '#d6ffe6' } });
+  const fit = new FitAddon.FitAddon();
+  term.loadAddon(fit);
+  term.open(document.getElementById('term'));
+  fit.fit();
+
+  const socket = io();
+  const payload = {
+    tool: {{ slug | tojson }},
+    action: {{ action | tojson }},
+    cmd: {{ custom | tojson }}
+  };
+
+  socket.on('connect', () => {
+    document.getElementById('status').textContent = 'connected';
+    socket.emit('resize', { rows: term.rows, cols: term.cols });
+    socket.emit('start', payload);
+  });
+  socket.on('output', (msg) => term.write(msg.data));
+  socket.on('exit', (msg) => {
+    document.getElementById('status').textContent = 'exited (' + msg.code + ')';
+  });
+  socket.on('disconnect', () => document.getElementById('status').textContent = 'disconnected');
+
+  term.onData(data => socket.emit('input', { data }));
+  addEventListener('resize', () => {
+    fit.fit();
+    socket.emit('resize', { rows: term.rows, cols: term.cols });
+  });
+</script>
+{% endblock %}

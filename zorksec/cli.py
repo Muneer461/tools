@@ -91,6 +91,16 @@ def cmd_tui(args: argparse.Namespace) -> int:
     return launch(team=team)
 
 
+def cmd_web(args: argparse.Namespace) -> int:
+    """Launch the Flask + SocketIO web dashboard."""
+    try:
+        from zorksec.web.app import run_web
+    except ImportError as exc:
+        print(f"{_FAIL} Web dashboard unavailable (install flask, flask-socketio, gevent): {exc}")
+        return 1
+    return run_web(host=getattr(args, "host", None), port=getattr(args, "port", None))
+
+
 def cmd_deps(_args: argparse.Namespace) -> int:
     """Show build/runtime dependency status (Python, Docker, Go, etc.)."""
     print(f"ZorkSec dependency engine\n{'-' * 44}")
@@ -198,6 +208,9 @@ def build_parser() -> argparse.ArgumentParser:
         description=f"{__app_name__} - command-line interface",
     )
     parser.add_argument("--version", action="store_true", help="print version and exit")
+    parser.add_argument("--web", action="store_true", help="launch the web dashboard")
+    parser.add_argument("--host", default=None, help="web bind host (default 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=None, help="web bind port (default 8765)")
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("init", help="initialise ZorkSec (dirs, database, default user, catalog)")
@@ -222,6 +235,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.version:
         return cmd_version(args)
+
+    if getattr(args, "web", False):
+        return cmd_web(args)
 
     dispatch = {
         "init": cmd_init,

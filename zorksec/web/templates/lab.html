@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}ZorkSec - Build My Lab{% endblock %}
+{% block body %}
+<div class="layout">
+  <aside class="sidebar">
+    <h1>ZorkSec</h1>
+    <div class="sub">Build My Lab</div>
+    <a class="cat" href="{{ url_for('dashboard') }}">← Back to dashboard</a>
+    <a class="cat" href="{{ url_for('logout') }}">Logout</a>
+  </aside>
+  <main class="main">
+    <h2>Build a safe practice lab</h2>
+    <div class="warn-box" style="margin-bottom:18px;">
+      <b>Golden rule:</b> vulnerable practice VMs must use a <b>Host-Only</b> or
+      <b>Internal</b> network. Never bridge a vulnerable machine to your home/work
+      network or the internet. Always snapshot before you practice.
+    </div>
+
+    <div class="panel">
+      <h2>Step 1 &mdash; Choose a hypervisor</h2>
+      <div class="grid">
+        {% for h in hypervisors %}
+        <div class="tool">
+          <h3>{{ h.name }}</h3>
+          <div class="note">{{ h.note }}</div>
+          <a class="badge" href="{{ h.url }}" target="_blank">Download</a>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Step 2 &mdash; Add VMs</h2>
+      <div class="grid">
+        {% for t in templates %}
+        <div class="tool">
+          <h3>{{ t.name }}</h3>
+          <div class="row">
+            <span class="badge {{ 'both' if t.role=='analyst' else 'red' }}">{{ t.role }}</span>
+          </div>
+          <div class="note">{{ t.beginner_note }}</div>
+          <a class="badge" href="{{ t.download }}" target="_blank">Get image</a>
+          <div class="actions">
+            <button onclick="addVm('{{ t.name }}', '{{ t.role }}')">Add to my lab</button>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Step 3 &mdash; My planned lab</h2>
+      <div id="vm-msg"></div>
+      <table id="vm-table">
+        <tr><th>Name</th><th>Role</th><th>Hypervisor</th><th>Network</th><th>Safe?</th></tr>
+        {% for v in vms %}
+        <tr>
+          <td>{{ v.name }}</td><td>{{ v.role }}</td><td>{{ v.hypervisor }}</td>
+          <td>{{ v.network }}</td>
+          <td>{% if v.isolated %}<span class="badge ok">isolated</span>{% else %}<span class="badge deprecated">unsafe</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+  </main>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  async function addVm(name, role) {
+    const network = role === 'target' ? 'hostonly' : 'nat';
+    const r = await fetch('/api/lab/vm', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({name, role, hypervisor: 'virtualbox', network_mode: network})});
+    const data = await r.json();
+    const msg = document.getElementById('vm-msg');
+    msg.className = data.safe ? 'ok-box' : 'warn-box';
+    msg.textContent = data.message;
+    const table = document.getElementById('vm-table');
+    const row = table.insertRow(-1);
+    row.innerHTML = `<td>${name}</td><td>${role}</td><td>virtualbox</td><td>${network}</td>` +
+      `<td>${data.safe ? '<span class="badge ok">isolated</span>' : '<span class="badge deprecated">unsafe</span>'}</td>`;
+  }
+</script>
+{% endblock %}

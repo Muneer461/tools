@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}ZorkSec - Login{% endblock %}
+{% block head %}
+<style>
+  body { margin: 0; overflow: hidden; background: #000; }
+  #matrix { position: fixed; inset: 0; z-index: 0; }
+  .login-card {
+    position: relative; z-index: 1; width: 340px; margin: 12vh auto 0;
+    background: rgba(8, 12, 20, 0.88); border: 1px solid #1c9c5a; border-radius: 14px;
+    padding: 28px; color: #d6ffe6; box-shadow: 0 0 40px rgba(28,156,90,0.35);
+    font-family: "Segoe UI", system-ui, sans-serif;
+  }
+  .login-card h1 { color: #36d399; text-align: center; margin: 0 0 4px; letter-spacing: 2px; }
+  .login-card .sub { text-align: center; color: #6fcf97; font-size: 12px; margin-bottom: 18px; }
+  .login-card input { width: 100%; margin-bottom: 12px; background: #04140b; color: #d6ffe6;
+    border: 1px solid #1c9c5a; border-radius: 8px; padding: 10px; }
+  .login-card button { width: 100%; background: #1c9c5a; color: #021a0d; border: none;
+    padding: 11px; border-radius: 8px; font-weight: 700; cursor: pointer; }
+  .creds { margin-top: 16px; font-size: 12px; text-align: center; color: #6fcf97; }
+  .err { background: rgba(248,114,114,0.15); border: 1px solid #f87272; color: #ffd5d5;
+    padding: 8px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; text-align: center; }
+</style>
+{% endblock %}
+{% block body %}
+<canvas id="matrix"></canvas>
+<form class="login-card" method="post">
+  <h1>ZorkSec</h1>
+  <div class="sub">SOC L1 Learning Edition</div>
+  {% if error %}<div class="err">{{ error }}</div>{% endif %}
+  <input name="username" placeholder="Username" autofocus autocomplete="username">
+  <input name="password" type="password" placeholder="Password" autocomplete="current-password">
+  <button type="submit">ENTER</button>
+  <div class="creds">Default login &mdash; <b>{{ default_user }}</b> / <b>{{ default_pass }}</b><br>
+  (you'll be asked to change it)</div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>
+  // Matrix rain animation.
+  const canvas = document.getElementById('matrix');
+  const ctx = canvas.getContext('2d');
+  function resize() { canvas.width = innerWidth; canvas.height = innerHeight; }
+  resize(); addEventListener('resize', resize);
+  const chars = 'アカサタナハマヤラワ0123456789ABCDEFセキュリティ'.split('');
+  const fontSize = 16;
+  let columns = Math.floor(canvas.width / fontSize);
+  let drops = Array(columns).fill(1);
+  function draw() {
+    ctx.fillStyle = 'rgba(0,0,0,0.06)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#36d399';
+    ctx.font = fontSize + 'px monospace';
+    for (let i = 0; i < drops.length; i++) {
+      const text = chars[Math.floor(Math.random() * chars.length)];
+      ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+      if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
+      drops[i]++;
+    }
+  }
+  setInterval(draw, 50);
+</script>
+{% endblock %}
