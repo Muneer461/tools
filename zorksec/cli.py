@@ -19,6 +19,9 @@ from zorksec import __app_name__, __author__, __version__
 from zorksec.config import ensure_directories, get_settings
 from zorksec.db.session import init_db, session_scope
 from zorksec.services.auth_service import AuthService
+from zorksec.services.dependency_service import DependencyService
+from zorksec.services.discovery_service import DiscoveryService
+from zorksec.services.registry_service import RegistryService
 from zorksec.utils.logging import configure_logging, get_logger
 
 logger = get_logger(__name__)
@@ -29,17 +32,63 @@ _FAIL = "[FAIL]"
 
 
 def cmd_init(_args: argparse.Namespace) -> int:
-    """Initialise directories, database schema, and the default user."""
+    """Initialise directories, database schema, default user, and catalog."""
     settings = get_settings()
     ensure_directories(settings)
     init_db(settings)
     with session_scope(settings) as session:
-        auth = AuthService(session, settings)
-        auth.ensure_default_user()
+        AuthService(session, settings).ensure_default_user()
+        count = RegistryService(session).seed_catalog()
+    with session_scope(settings) as session:
+        installed = DiscoveryService(session).sync_installed_status()
     print(f"{_OK} ZorkSec initialised at {settings.home}")
     print(f"{_OK} Database ready: {settings.db_path}")
+    print(f"{_OK} Catalog seeded: {count} tools ({installed} already installed on this host)")
     print(f"{_OK} Default login: {settings.default_username} / {settings.default_password} "
           "(you must change this on first login)")
+    return 0
+
+
+def cmd_catalog(args: argparse.Namespace) -> int:
+    """List the tool catalog for a team profile, grouped by category."""
+    team = getattr(args, "team", "both") or "both"
+    with session_scope() as session:
+        svc = RegistryService(session)
+        if svc.tools.count() == 0:
+            svc.seed_catalog()
+        tools = svc.list_for_team(team)
+        by_cat: dict[str, list] = {}
+        for tool in tools:
+            by_cat.setdefault(tool.category, []).append(tool)
+        print(f"ZorkSec catalog - profile '{team}' ({len(tools)} tools)\n{'-' * 44}")
+        for category, items in by_cat.items():
+            print(f"\n[{category}]")
+            for tool in items:
+                mark = "*" if (tool.status and tool.status.installed) else " "
+                print(f"  [{mark}] {tool.name} ({tool.slug}) - {tool.team}")
+    return 0
+
+
+def cmd_discover(_args: argparse.Namespace) -> int:
+    """Detect which catalog tools are already installed on this host."""
+    with session_scope() as session:
+        svc = RegistryService(session)
+        if svc.tools.count() == 0:
+            svc.seed_catalog()
+        installed = DiscoveryService(session).sync_installed_status()
+    print(f"{_OK} Discovery complete: {installed} catalog tool(s) detected as installed")
+    return 0
+
+
+def cmd_deps(_args: argparse.Namespace) -> int:
+    """Show build/runtime dependency status (Python, Docker, Go, etc.)."""
+    print(f"ZorkSec dependency engine\n{'-' * 44}")
+    for dep in DependencyService().detect():
+        if dep.present:
+            ver = f" {dep.version}" if dep.version else ""
+            print(f"{_OK} {dep.name}{ver}")
+        else:
+            print(f"{_WARN} {dep.name} missing  -> {dep.install_hint}")
     return 0
 
 
@@ -140,9 +189,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="store_true", help="print version and exit")
     sub = parser.add_subparsers(dest="command")
 
-    sub.add_parser("init", help="initialise ZorkSec (dirs, database, default user)")
+    sub.add_parser("init", help="initialise ZorkSec (dirs, database, default user, catalog)")
     sub.add_parser("doctor", help="validate environment, dependencies, and database")
     sub.add_parser("version", help="print version information")
+    sub.add_parser("discover", help="detect catalog tools already installed on this host")
+    sub.add_parser("deps", help="show build/runtime dependency status")
+    cat = sub.add_parser("catalog", help="list the tool catalog for a team profile")
+    cat.add_argument("--team", choices=["blue", "red", "both"], default="both",
+                     help="team profile to display (default: both)")
 
     return parser
 
@@ -159,6 +213,9 @@ def main(argv: list[str] | None = None) -> int:
         "init": cmd_init,
         "doctor": cmd_doctor,
         "version": cmd_version,
+        "catalog": cmd_catalog,
+        "discover": cmd_discover,
+        "deps": cmd_deps,
     }
     handler = dispatch.get(args.command)
     if handler is None:
