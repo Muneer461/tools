@@ -1,0 +1,108 @@
+==============================================================
+ ZorkSec - SOC L1 Learning Edition
+ How to install and run on a fresh Kali Linux machine
+ Author: Mohammad Muneeruddin (Muneer461 / Zork)
+==============================================================
+
+ABOUT
+-----
+ZorkSec is a beginner-friendly Security Operations Center (SOC) learning
+platform. It gives you:
+  * an interactive terminal UI (the `tools` command)
+  * a web dashboard with a built-in browser terminal
+  * a curated catalog of 70+ blue/red team tools with plain-English notes
+  * Threat Intelligence, DFIR, Detection Engineering and ATT&CK workspaces
+  * a reporting engine and an offline AI assistant
+  * a "Build My Lab" wizard for a safe VMware/VirtualBox practice lab
+
+It is designed to run inside a SAFE, ISOLATED practice lab - never point its
+offensive tools at systems you do not own or have written permission to test.
+
+--------------------------------------------------------------
+STEP 0 - RECOMMENDED LAB SETUP (do this first)
+--------------------------------------------------------------
+1. Install a hypervisor on your normal computer:
+     - VMware Workstation Player/Pro   (recommended), OR
+     - Oracle VirtualBox               (free alternative)
+2. Create a Kali Linux VM - this is where ZorkSec runs (your "analyst" VM).
+3. Add practice target VMs (Metasploitable 2, DVWA, OWASP Juice Shop, etc.).
+4. IMPORTANT SAFETY RULE:
+     Put all vulnerable target VMs on a HOST-ONLY or INTERNAL network.
+     NEVER bridge a vulnerable VM to your home/work network or the internet.
+5. Take a VM snapshot before each practice session so you can revert.
+
+   (ZorkSec's "Build My Lab" page walks you through this and checks your
+    network choices for you.)
+
+--------------------------------------------------------------
+STEP 1 - GET THE INSTALLER ONTO KALI
+--------------------------------------------------------------
+Option A - clone the repo:
+    git clone https://github.com/muneer461/tools.git
+    cd tools
+
+Option B - copy just install.sh to your Kali VM (it is fully self-contained).
+
+--------------------------------------------------------------
+STEP 2 - RUN THE INSTALLER
+--------------------------------------------------------------
+    chmod +x install.sh
+    sudo ./install.sh
+
+What it does (safe to re-run any time):
+    * installs base packages (python3, venv, pip, git)
+    * creates /opt/zorksec and all subfolders
+    * writes the application files and a Python virtual environment
+    * installs the global `tools` command at /usr/local/bin/tools
+    * initialises the database, tool catalog, and default user
+
+--------------------------------------------------------------
+STEP 3 - LAUNCH ZORKSEC
+--------------------------------------------------------------
+Interactive terminal UI:
+    tools
+
+Web dashboard (open the printed URL in your Kali browser):
+    tools --web
+    # then visit http://127.0.0.1:8765
+
+Check your environment at any time:
+    tools doctor
+
+Other useful commands:
+    tools catalog --team blue      # list blue-team tools
+    tools catalog --team red       # list red-team tools
+    tools deps                     # show runtime dependencies
+    tools discover                 # detect tools already installed on Kali
+    tools attack                   # show MITRE ATT&CK coverage
+    tools report --type incident --format html
+
+--------------------------------------------------------------
+STEP 4 - FIRST LOGIN
+--------------------------------------------------------------
+Default credentials (shown on the login page):
+    username: zorksec
+    password: zorksec
+
+You MUST change the password on first login. For safety the web dashboard
+binds to 127.0.0.1 (localhost) until the default password has been changed.
+
+--------------------------------------------------------------
+TROUBLESHOOTING
+--------------------------------------------------------------
+* "Python 3.10+ required": update Python (Kali 2026+ already ships 3.11+).
+* Web page won't load: confirm `tools --web` is running and use the exact
+  printed URL (http://127.0.0.1:8765).
+* Permissions: run the installer with sudo. Runtime files are chown'd back
+  to your normal user automatically.
+* Reset everything: sudo rm -rf /opt/zorksec, then re-run sudo ./install.sh.
+
+--------------------------------------------------------------
+UNINSTALL
+--------------------------------------------------------------
+    sudo rm -rf /opt/zorksec
+    sudo rm -f /usr/local/bin/tools
+
+==============================================================
+ Stay curious, practice safely, and happy hunting.  - Zork
+==============================================================
