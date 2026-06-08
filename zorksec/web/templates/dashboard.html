@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}ZorkSec Dashboard{% endblock %}
+{% block body %}
+<div class="layout">
+  <aside class="sidebar">
+    <h1>ZorkSec</h1>
+    <div class="sub">{{ theme.name }} &middot; {{ username }}</div>
+    <form method="post" action="{{ url_for('set_profile') }}" style="margin-bottom:14px;">
+      <select name="team" onchange="this.form.submit()" style="width:100%;">
+        {% for key, t in themes.items() %}
+        <option value="{{ key }}" {% if key == team %}selected{% endif %}>{{ t.name }}</option>
+        {% endfor %}
+      </select>
+    </form>
+    <button class="cat active" data-cat="__all__">All tools</button>
+    {% for c in categories %}
+    <button class="cat" data-cat="{{ c }}">{{ c }}</button>
+    {% endfor %}
+    <hr style="border-color: rgba(255,255,255,0.08); margin: 14px 0;">
+    <a class="cat" href="{{ url_for('lab') }}">🧪 Build My Lab</a>
+    <a class="cat" href="{{ url_for('logout') }}">Logout</a>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="runner">
+        <input id="custom-cmd" placeholder="Lab-only command runner (audited)…" style="flex:1;">
+        <button onclick="runCustom()">Run</button>
+      </div>
+      <div>
+        <span class="badge">{{ installed_count }}/{{ tool_count }} installed</span>
+      </div>
+    </div>
+
+    <div class="cards" id="metrics">
+      <div class="metric"><div class="v" id="m-cpu">–</div><div class="l">CPU %</div></div>
+      <div class="metric"><div class="v" id="m-mem">–</div><div class="l">Memory %</div></div>
+      <div class="metric"><div class="v" id="m-disk">–</div><div class="l">Disk %</div></div>
+      <div class="metric"><div class="v">{{ tool_count }}</div><div class="l">Catalog tools</div></div>
+    </div>
+
+    <div class="panel assistant">
+      <h2>AI Assistant <span class="badge">offline</span></h2>
+      <div class="log" id="ai-log">
+        <div class="ai">Ask me about phishing, IOCs, logs, Sigma, incidents, or ATT&CK.</div>
+      </div>
+      <div style="display:flex; gap:8px; margin-top:10px;">
+        <input id="ai-input" placeholder="e.g. explain phishing triage" style="flex:1;">
+        <button onclick="askAi()">Ask</button>
+      </div>
+    </div>
+
+    <h2 style="margin:6px 0 12px;">Tools</h2>
+    <div class="grid" id="tool-grid">
+      {% for t in tools %}
+      <div class="tool" data-cat="{{ t.category }}">
+        <h3>{{ t.name }}</h3>
+        <div class="row">
+          <span class="badge {{ t.team }}">{{ t.team }}</span>
+          <span class="badge {{ t.health_status }}">{{ t.health_status }}</span>
+          {% if t.installed %}<span class="badge ok">installed</span>{% endif %}
+          {% if t.requires_isolation %}<span class="badge deprecated">sandbox</span>{% endif %}
+        </div>
+        <div class="note">{{ t.beginner_note }}</div>
+        <div class="actions">
+          <button onclick="openTerm('{{ t.slug }}','install')">Install</button>
+          <button class="ghost" onclick="openTerm('{{ t.slug }}','run')">Run</button>
+          {% if t.docs_url %}<a class="badge" href="{{ t.docs_url }}" target="_blank">Docs</a>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="panel" style="margin-top:22px;">
+      <h2>Recent activity</h2>
+      <table>
+        <tr><th>Tool</th><th>Action</th><th>Result</th><th>When</th></tr>
+        {% for h in history %}
+        <tr>
+          <td>{{ h.tool }}</td><td>{{ h.action }}</td>
+          <td>{% if h.success %}<span class="badge ok">ok</span>{% else %}<span class="badge deprecated">code {{ h.code }}</span>{% endif %}</td>
+          <td>{{ h.when }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" style="color:var(--muted);">No activity yet.</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+  </main>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  // Category filtering.
+  document.querySelectorAll('.sidebar .cat[data-cat]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.sidebar .cat[data-cat]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const cat = btn.dataset.cat;
+      document.querySelectorAll('#tool-grid .tool').forEach(card => {
+        card.style.display = (cat === '__all__' || card.dataset.cat === cat) ? '' : 'none';
+      });
+    });
+  });
+
+  function openTerm(slug, action) {
+    window.open(`/terminal?tool=${encodeURIComponent(slug)}&action=${action}`, '_blank');
+  }
+  function runCustom() {
+    const cmd = document.getElementById('custom-cmd').value.trim();
+    if (!cmd) return;
+    window.open(`/terminal?cmd=${encodeURIComponent(cmd)}`, '_blank');
+  }
+
+  async function refreshMetrics() {
+    try {
+      const r = await fetch('/api/metrics'); const m = await r.json();
+      document.getElementById('m-cpu').textContent = m.available ? m.cpu_percent : 'n/a';
+      document.getElementById('m-mem').textContent = m.available ? m.memory_percent : 'n/a';
+      document.getElementById('m-disk').textContent = m.available ? m.disk_percent : 'n/a';
+    } catch (e) {}
+  }
+  refreshMetrics(); setInterval(refreshMetrics, 5000);
+
+  async function askAi() {
+    const input = document.getElementById('ai-input');
+    const log = document.getElementById('ai-log');
+    const q = input.value.trim(); if (!q) return;
+    log.innerHTML += `<div class="you">› ${q}</div>`;
+    input.value = '';
+    const r = await fetch('/api/ai', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({prompt: q})});
+    const data = await r.json();
+    log.innerHTML += `<div class="ai">${data.reply}</div>`;
+    log.scrollTop = log.scrollHeight;
+  }
+  document.getElementById('ai-input').addEventListener('keydown', e => { if (e.key === 'Enter') askAi(); });
+</script>
+{% endblock %}
