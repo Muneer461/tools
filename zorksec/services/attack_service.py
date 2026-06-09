@@ -15,12 +15,11 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from zorksec.db.models import MitreMapping, ToolRegistry, ToolStatus
+from zorksec.db.models import MitreMapping
 from zorksec.detection.attack import (
     TACTICS,
     TECHNIQUES,
     Technique,
-    get_technique,
     tactic_order,
     technique_explanation,
 )

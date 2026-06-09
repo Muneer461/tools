@@ -12,7 +12,6 @@ import datetime as _dt
 from sqlalchemy import (
     Boolean,
     DateTime,
-    Float,
     ForeignKey,
     Integer,
     String,

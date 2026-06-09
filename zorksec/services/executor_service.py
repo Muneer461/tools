@@ -20,10 +20,9 @@ import os
 import signal
 import subprocess
 import threading
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass
 from shlex import quote as shlex_quote
-from typing import Callable, Iterator
+from typing import Callable
 
 from sqlalchemy.orm import Session
 

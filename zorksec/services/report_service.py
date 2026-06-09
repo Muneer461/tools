@@ -15,12 +15,16 @@ import datetime as _dt
 import io
 import json
 from dataclasses import asdict, dataclass, field
+from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
 from zorksec.config import Settings, ensure_directories, get_settings
 from zorksec.repositories.report_repository import ReportRepository
 from zorksec.utils.logging import get_logger
+
+if TYPE_CHECKING:  # annotation-only import (avoids a runtime import cycle)
+    from zorksec.db.models import Report
 
 logger = get_logger(__name__)
 

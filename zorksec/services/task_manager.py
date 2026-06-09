@@ -20,7 +20,7 @@ import signal
 import subprocess
 import threading
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from zorksec.utils.logging import get_logger
 from zorksec.utils.system import tool_env
