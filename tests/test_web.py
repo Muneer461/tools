@@ -545,3 +545,58 @@ def test_diagnostic_center_uses_external_js(client):
     assert "static/diagnostics.js?v=" in body
     assert 'data-action="diag-run"' in body
     assert "onclick=" not in body
+
+
+
+# ---------------------------------------------------------------------------
+# Login-security enforcement (must never regress): every route requires auth,
+# tools are never reachable without a completed login + wizard.
+# ---------------------------------------------------------------------------
+# Endpoints intentionally reachable without an authenticated session.
+_PUBLIC_ENDPOINTS = {"login", "logout", "forgot_password", "reset_password", "static"}
+
+
+def test_every_route_requires_authentication(client):
+    """Auto-enumerate the URL map: a fresh (logged-out) session must be blocked
+    from EVERY non-public route. Guards against a new route shipping without
+    @_login_required (which would let tools be bypassed)."""
+    import re as _re
+
+    leaks = []
+    for rule in client.application.url_map.iter_rules():
+        if rule.endpoint in _PUBLIC_ENDPOINTS:
+            continue
+        methods = rule.methods - {"HEAD", "OPTIONS"}
+        method = "GET" if "GET" in methods else sorted(methods)[0]
+        path = _re.sub(r"<[^>]+>", "x", rule.rule)
+        resp = client.open(path, method=method)
+        location = resp.headers.get("Location", "")
+        # Acceptable "blocked" outcomes: redirect to login, 401, or 400 (CSRF
+        # guard rejects the unauthenticated state-changing POST first). The key
+        # invariant: the action is never performed and no dashboard/tool is shown.
+        blocked = (
+            (resp.status_code in (301, 302) and "login" in location)
+            or resp.status_code in (400, 401, 403)
+        )
+        if not blocked:
+            leaks.append((method, path, resp.status_code, location))
+    assert not leaks, f"routes reachable without login: {leaks}"
+
+
+def test_tools_blocked_until_wizard_complete(client):
+    """During the forced first-login wizard, tool/terminal routes stay blocked."""
+    client.post("/login", data={"username": "zorksec", "password": "zorksec"})
+    for path in ("/", "/terminal?tool=nmap", "/usage?tool=nmap", "/lab", "/api/tools"):
+        resp = client.get(path)
+        assert resp.status_code == 302
+        assert "change-password" in resp.headers["Location"]
+
+
+def test_default_password_rejected_after_change(client):
+    """Once the default password is changed, it can never log in again."""
+    _login_full(client)               # changes zorksec/zorksec -> StrongPass1!
+    client.get("/logout")
+    fresh = client
+    fresh.post("/login", data={"username": "zorksec", "password": "zorksec"})
+    # Default creds no longer grant access.
+    assert fresh.get("/").status_code == 302
