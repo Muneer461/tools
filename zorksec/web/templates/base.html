@@ -4,7 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}ZorkSec{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='zorksec.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='zorksec.css') }}?v={{ asset_v }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/fontawesome/css/all.min.css') }}?v={{ asset_v }}">
   {% if theme %}
   <style>
     :root {

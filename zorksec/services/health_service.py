@@ -187,8 +187,21 @@ class HealthService:
         tools_cache: dict[str, dict] = {}
         refreshed = 0
         for slug, _repo in repos:
-            result = self.refresh_tool(slug)
-            if result is None:
+            # IMPORTANT: commit after every tool so the SQLite write lock is
+            # held only for the brief persist step, never across the (slow,
+            # up-to-10s) network call for the *next* tool. Holding one open
+            # write transaction for the whole loop was the root cause of
+            # "sqlite3.OperationalError: database is locked" hitting concurrent
+            # dashboard writes. Each tool is also isolated so one failure
+            # cannot abort the batch.
+            try:
+                result = self.refresh_tool(slug)
+                if result is None:
+                    continue
+                self.session.commit()
+            except Exception as exc:  # pragma: no cover - per-tool safety
+                logger.warning("Health refresh failed for %s: %s", slug, exc)
+                self.session.rollback()
                 continue
             refreshed += 1
             tools_cache[slug] = {
