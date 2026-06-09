@@ -43,6 +43,9 @@ class User(Base):
     failed_login_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     locked_until: Mapped[_dt.datetime | None] = mapped_column(DateTime, nullable=True)
     last_login_at: Mapped[_dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    # Password recovery: security question + bcrypt-hashed answer (optional).
+    security_question: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    security_answer_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[_dt.datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
 
     api_keys: Mapped[list["ApiKey"]] = relationship(back_populates="user", cascade="all, delete-orphan")

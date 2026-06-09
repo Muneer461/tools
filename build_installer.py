@@ -83,6 +83,20 @@ for d in core web tui plugins registry database reports logs config templates st
 done
 ok "Directory layout ready"
 
+# --- remove conflicting legacy installs ------------------------------------
+# Older builds installed to ~/.zorksec (and used eventlet/port 5000). If left
+# in place, a stale 'zorksec'/'tools' launcher can shadow this install. Remove
+# them so /opt/zorksec is the single source of truth.
+for legacy in "/root/.zorksec" "$(eval echo ~$REAL_USER)/.zorksec"; do
+  if [ -n "$legacy" ] && [ -d "$legacy" ] && [ "$legacy" != "$ZORKSEC_HOME" ]; then
+    rm -rf "$legacy" && warn "Removed legacy install at $legacy"
+  fi
+done
+# Drop stale launchers in common user-local bin dirs.
+for old in "$(eval echo ~$REAL_USER)/.local/bin/zorksec" "$(eval echo ~$REAL_USER)/.local/bin/tools"; do
+  [ -e "$old" ] && rm -f "$old" && warn "Removed stale launcher $old"
+done
+
 # --- write embedded application files --------------------------------------
 write_file() {
   # $1 = relative path, $2 = base64 payload

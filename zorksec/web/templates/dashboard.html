@@ -18,6 +18,7 @@
     {% endfor %}
     <hr style="border-color: rgba(255,255,255,0.08); margin: 14px 0;">
     <a class="cat" href="{{ url_for('lab') }}">🧪 Build My Lab</a>
+    <a class="cat" href="{{ url_for('security_question') }}">🔑 Recovery question</a>
     <a class="cat" href="{{ url_for('logout') }}">Logout</a>
   </aside>
 
@@ -64,11 +65,26 @@
         <div class="note">{{ t.beginner_note }}</div>
         <div class="actions">
           <button onclick="openTerm('{{ t.slug }}','install')">Install</button>
-          <button class="ghost" onclick="openTerm('{{ t.slug }}','run')">Run</button>
-          {% if t.docs_url %}<a class="badge" href="{{ t.docs_url }}" target="_blank">Docs</a>{% endif %}
+          <button class="ghost" onclick="askRun('{{ t.slug }}','{{ t.name }}')">Run</button>
+          <button class="ghost" onclick="openDocs('{{ t.slug }}')">Docs</button>
         </div>
       </div>
       {% endfor %}
+    </div>
+
+    <!-- Run-options modal: choose where to run a tool. -->
+    <div id="run-modal" class="modal-overlay" style="display:none;">
+      <div class="modal">
+        <h3 id="run-modal-title">Run tool</h3>
+        <p style="color:var(--muted); font-size:13px;">Where would you like to run this tool?</p>
+        <div style="display:flex; flex-direction:column; gap:10px; margin-top:10px;">
+          <button onclick="runChoice('browser')">🌐 In-browser terminal (new tab)</button>
+          <button class="ghost" onclick="runChoice('native')">🖥️ Native Kali terminal window</button>
+          <button class="ghost" onclick="runChoice('docs')">📖 Open docs &amp; usage instead</button>
+          <button class="ghost" onclick="closeRun()">Cancel</button>
+        </div>
+        <div id="run-modal-msg" style="margin-top:10px; font-size:13px;"></div>
+      </div>
     </div>
 
     <div class="panel" style="margin-top:22px;">
@@ -105,6 +121,50 @@
 
   function openTerm(slug, action) {
     window.open(`/terminal?tool=${encodeURIComponent(slug)}&action=${action}`, '_blank');
+  }
+  function openDocs(slug) {
+    window.open(`/usage?tool=${encodeURIComponent(slug)}`, '_blank');
+  }
+
+  // Run-options modal: browser terminal vs native Kali terminal vs docs.
+  let _runSlug = null;
+  function askRun(slug, name) {
+    _runSlug = slug;
+    document.getElementById('run-modal-title').textContent = 'Run ' + name;
+    document.getElementById('run-modal-msg').textContent = '';
+    document.getElementById('run-modal').style.display = 'flex';
+  }
+  function closeRun() {
+    document.getElementById('run-modal').style.display = 'none';
+    _runSlug = null;
+  }
+  async function runChoice(where) {
+    if (!_runSlug) return;
+    if (where === 'browser') {
+      openTerm(_runSlug, 'run'); closeRun();
+    } else if (where === 'docs') {
+      openDocs(_runSlug); closeRun();
+    } else if (where === 'native') {
+      const msg = document.getElementById('run-modal-msg');
+      msg.textContent = 'Launching native Kali terminal…';
+      try {
+        const r = await fetch('/api/run-target', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({tool: _runSlug})});
+        const data = await r.json();
+        if (data.launched) {
+          msg.innerHTML = '<span style="color:var(--ok)">' + (data.detail || 'Launched.') + '</span>';
+          setTimeout(closeRun, 1200);
+        } else {
+          msg.innerHTML = '<span style="color:var(--warn)">' +
+            (data.error || data.detail || 'Could not open a native terminal.') +
+            ' Opening the in-browser terminal instead…</span>';
+          setTimeout(() => { openTerm(_runSlug, 'run'); closeRun(); }, 1600);
+        }
+      } catch (e) {
+        msg.innerHTML = '<span style="color:var(--danger)">Request failed.</span>';
+      }
+    }
   }
   function runCustom() {
     const cmd = document.getElementById('custom-cmd').value.trim();

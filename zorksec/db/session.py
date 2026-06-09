@@ -10,7 +10,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import Iterator
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -56,9 +56,40 @@ def get_sessionmaker(settings: Settings | None = None) -> sessionmaker[Session]:
 
 
 def init_db(settings: Settings | None = None) -> None:
-    """Create all tables if they do not exist (idempotent)."""
+    """Create all tables if they do not exist (idempotent), then migrate."""
     engine = get_engine(settings)
     Base.metadata.create_all(engine)
+    _apply_additive_migrations(engine)
+
+
+# Columns added after v1.0.0 that may be missing from an existing database.
+# SQLite supports cheap ``ALTER TABLE ... ADD COLUMN`` for additive changes.
+_ADDITIVE_COLUMNS: dict[str, dict[str, str]] = {
+    "users": {
+        "security_question": "VARCHAR(255)",
+        "security_answer_hash": "VARCHAR(255)",
+    },
+}
+
+
+def _apply_additive_migrations(engine: Engine) -> None:
+    """Add any missing columns to existing tables (idempotent, non-destructive).
+
+    Keeps already-installed databases working after a schema addition without
+    requiring the user to delete their data.
+    """
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    with engine.begin() as conn:
+        for table, columns in _ADDITIVE_COLUMNS.items():
+            if table not in existing_tables:
+                continue
+            present = {col["name"] for col in inspector.get_columns(table)}
+            for name, ddl_type in columns.items():
+                if name not in present:
+                    conn.execute(text(
+                        f'ALTER TABLE {table} ADD COLUMN {name} {ddl_type}'
+                    ))
 
 
 @contextmanager

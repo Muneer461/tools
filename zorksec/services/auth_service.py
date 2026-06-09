@@ -141,3 +141,64 @@ class AuthService:
         user.must_change_password = False
         self._audit.record("password_change", username=username, detail="success", success=True)
         logger.info("User '%s' changed password", username)
+
+    # ----- security question / password recovery ---------------------------
+    @staticmethod
+    def _normalise_answer(answer: str) -> str:
+        """Normalise an answer so matching is case/space-insensitive."""
+        return " ".join((answer or "").strip().lower().split())
+
+    def set_security_question(self, username: str, question: str, answer: str) -> None:
+        """Set (or update) a user's recovery question and bcrypt-hashed answer."""
+        if not question.strip():
+            raise AuthError("Security question cannot be empty.")
+        if len(self._normalise_answer(answer)) < 2:
+            raise AuthError("Security answer is too short.")
+        user = self._users.get_by_username(username)
+        if user is None:
+            raise AuthError("Unknown user.")
+        user.security_question = question.strip()
+        user.security_answer_hash = self.hash_password(self._normalise_answer(answer))
+        self._audit.record("security_question_set", username=username,
+                           detail="recovery question configured", success=True)
+        logger.info("Security question set for '%s'", username)
+
+    def get_security_question(self, username: str) -> str | None:
+        """Return the user's security question, or None if not set / unknown user."""
+        user = self._users.get_by_username(username)
+        if user is None or not user.security_answer_hash:
+            return None
+        return user.security_question
+
+    def verify_security_answer(self, username: str, answer: str) -> bool:
+        """Check a recovery answer against the stored bcrypt hash."""
+        user = self._users.get_by_username(username)
+        if user is None or not user.security_answer_hash:
+            return False
+        ok = self.verify_password(self._normalise_answer(answer), user.security_answer_hash)
+        self._audit.record("security_answer_check", username=username,
+                           detail="correct" if ok else "incorrect", success=ok)
+        return ok
+
+    def reset_password_with_answer(self, username: str, answer: str,
+                                   new_password: str) -> None:
+        """Reset a forgotten password after verifying the security answer."""
+        if len(new_password) < 8:
+            raise AuthError("New password must be at least 8 characters.")
+        if new_password == self._settings.default_password:
+            raise AuthError("New password must differ from the default password.")
+        user = self._users.get_by_username(username)
+        if user is None or not user.security_answer_hash:
+            raise AuthError("Password recovery is not set up for this account.")
+        if not self.verify_password(self._normalise_answer(answer), user.security_answer_hash):
+            self._audit.record("password_reset", username=username,
+                               detail="wrong security answer", success=False)
+            raise AuthError("Security answer is incorrect.")
+        user.password_hash = self.hash_password(new_password)
+        user.must_change_password = False
+        # Recovering access also clears any lockout.
+        user.failed_login_count = 0
+        user.locked_until = None
+        self._audit.record("password_reset", username=username,
+                           detail="reset via security question", success=True)
+        logger.info("User '%s' reset password via security question", username)

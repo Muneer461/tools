@@ -197,3 +197,63 @@ def test_interactive_terminal_runs_initial_command_and_accepts_input(zorksec_hom
     text = "".join(collected)
     assert "INITIAL_OK" in text       # the tool/initial command ran
     assert "FOLLOWUP_OK" in text      # the user can still type and execute
+
+
+
+# ---------------------------------------------------------------------------
+# Password recovery + usage/docs + run-target (new features)
+# ---------------------------------------------------------------------------
+def test_login_page_has_forgot_link(client):
+    body = client.get("/login").get_data(as_text=True)
+    assert "/forgot-password" in body
+
+
+def test_forgot_password_unknown_user_shows_error(client):
+    resp = client.post("/forgot-password", data={"username": "ghost"})
+    body = resp.get_data(as_text=True)
+    assert resp.status_code == 200
+    assert "No security question" in body or "unknown" in body.lower()
+
+
+def test_security_question_set_then_recover(client):
+    _login_full(client)
+    # Set a recovery question.
+    resp = client.post("/security-question", data={
+        "question": "First pet?", "answer": "Whiskers"})
+    assert resp.status_code == 200
+    assert "Saved" in resp.get_data(as_text=True)
+    # Log out, then the forgot flow should reveal the question.
+    client.get("/logout")
+    step1 = client.post("/forgot-password", data={"username": "zorksec"})
+    assert "First pet?" in step1.get_data(as_text=True)
+    # Reset with the correct answer.
+    step2 = client.post("/reset-password", data={
+        "username": "zorksec", "answer": "whiskers",
+        "new_password": "RecoveredPass1!", "confirm_password": "RecoveredPass1!"})
+    assert step2.status_code == 302  # redirected to login
+    # New password works.
+    login = client.post("/login", data={"username": "zorksec", "password": "RecoveredPass1!"})
+    assert login.status_code == 302
+
+
+def test_api_usage_returns_info(client):
+    _login_full(client)
+    data = client.get("/api/usage?tool=nmap").get_json()
+    assert data["slug"] == "nmap"
+    assert "binary" in data and "usage_text" in data
+
+
+def test_usage_page_renders(client):
+    _login_full(client)
+    resp = client.get("/usage?tool=nmap")
+    assert resp.status_code == 200
+    assert "usage" in resp.get_data(as_text=True).lower()
+
+
+def test_run_target_headless_falls_back(client, monkeypatch):
+    _login_full(client)
+    # No DISPLAY in CI -> should report not launched (graceful fallback).
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    data = client.post("/api/run-target", json={"tool": "nmap"}).get_json()
+    assert data["launched"] is False

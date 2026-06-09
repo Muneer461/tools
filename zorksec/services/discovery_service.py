@@ -48,8 +48,17 @@ def _run(cmd: list[str], timeout: int = 15) -> str:
 
 
 def binary_present(binary: str) -> bool:
-    """True if an executable is on PATH."""
-    return bool(binary) and shutil.which(binary) is not None
+    """True if an executable is on PATH (including per-user tool bin dirs).
+
+    Uses an augmented PATH so binaries installed by ``go install`` (``~/go/bin``),
+    Cargo, or ``pip --user`` are detected even when the parent shell's PATH does
+    not include them.
+    """
+    if not binary:
+        return False
+    from zorksec.utils.system import augmented_path
+
+    return shutil.which(binary, path=augmented_path()) is not None
 
 
 @dataclass

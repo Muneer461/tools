@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}ZorkSec - Security Question{% endblock %}
+{% block body %}
+<div style="max-width: 460px; margin: 8vh auto;">
+  <div class="panel">
+    <h2>Password recovery question</h2>
+    <p style="color: var(--muted); font-size: 13px;">
+      Set a security question and answer. If you ever forget your password, you
+      can answer this to regain access. Your answer is stored hashed (never in
+      plain text) and matching is case-insensitive.
+    </p>
+    {% if error %}<div class="warn-box" style="margin-bottom:12px;">{{ error }}</div>{% endif %}
+    {% if saved %}<div class="ok-box" style="margin-bottom:12px;">Saved! Your recovery question is set.</div>{% endif %}
+    {% if current %}
+      <div style="margin-bottom:12px; font-size:13px;">
+        Current question: <span style="color: var(--accent);">{{ current }}</span>
+      </div>
+    {% endif %}
+    <form method="post">
+      <input name="question" placeholder="e.g. What was the name of your first pet?"
+             value="{{ current or '' }}" style="width:100%; margin-bottom:10px;">
+      <input name="answer" placeholder="Your secret answer"
+             style="width:100%; margin-bottom:14px;">
+      <button type="submit" style="width:100%;">Save security question</button>
+    </form>
+    <div style="margin-top:14px; text-align:center;">
+      <a href="{{ url_for('dashboard') }}" style="font-size:13px;">Back to dashboard</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

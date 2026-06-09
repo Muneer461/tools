@@ -20,14 +20,21 @@ def test_apt_install_command():
 
 
 def test_pip_install_command():
+    import sys
     cmd = build_install_command("pip", "volatility3", "volatility3")
-    assert cmd.argv[:3] == ["python3", "-m", "pip"]
+    # Uses the running interpreter so the console script lands in a known bin dir.
+    assert cmd.argv[:3] == [sys.executable, "-m", "pip"]
     assert "volatility3" in cmd.argv
 
 
 def test_go_install_command():
     cmd = build_install_command("go", "github.com/x/y@latest", "y")
-    assert cmd.argv == ["go", "install", "github.com/x/y@latest"]
+    # Go installs are a single shell command (shell=True) that pins GOBIN to
+    # ~/go/bin so the resulting binary is always on the augmented PATH.
+    assert cmd.shell is True
+    assert "go install" in cmd.argv[0]
+    assert "github.com/x/y@latest" in cmd.argv[0]
+    assert "GOBIN=" in cmd.argv[0]
 
 
 def test_github_clone_command_uses_soc_tools_dir():

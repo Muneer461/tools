@@ -12,6 +12,7 @@ from __future__ import annotations
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from shlex import quote as shlex_quote
 from typing import Callable, Iterator
 
 from sqlalchemy.orm import Session
@@ -20,7 +21,7 @@ from zorksec.db.models import ToolRegistry
 from zorksec.repositories.history_repository import HistoryRepository
 from zorksec.repositories.tool_repository import ToolRepository
 from zorksec.utils.logging import get_logger
-from zorksec.utils.system import soc_tools_dir
+from zorksec.utils.system import soc_tools_dir, tool_env
 
 logger = get_logger(__name__)
 
@@ -61,10 +62,20 @@ def build_install_command(method: str, target: str, slug: str) -> Command | None
     if method == "snap":
         return Command(["sudo", "snap", "install", target], f"snap install {target}")
     if method == "pip":
-        return Command(["python3", "-m", "pip", "install", "--upgrade", target],
+        # Use the SAME interpreter ZorkSec runs under so the installed console
+        # script lands in a bin dir we add to PATH (avoids "command not found").
+        import sys
+        return Command([sys.executable, "-m", "pip", "install", "--upgrade", target],
                        f"pip install {target}")
     if method == "go":
-        return Command(["go", "install", target], f"go install {target}")
+        # Pin GOBIN to ~/go/bin (which we add to PATH) so the binary is findable
+        # regardless of the user's GOPATH/GOBIN configuration.
+        from zorksec.utils.system import real_home
+        gobin = real_home() / "go" / "bin"
+        # shell=True commands are executed from argv[0], so the full pipeline
+        # must live in a single string (GOBIN pins the output to ~/go/bin).
+        go_cmd = f"GOBIN={shlex_quote(str(gobin))} go install {shlex_quote(target)}"
+        return Command([go_cmd], f"go install {target}", shell=True)
     if method == "docker":
         return Command(["docker", "pull", target], f"docker pull {target}")
     if method == "github":
@@ -115,6 +126,8 @@ def stream_command(
         "text": True,
         "bufsize": 1,
         "cwd": command.cwd,
+        # Augment PATH so freshly go/cargo/pip-installed tools are found.
+        "env": tool_env(),
     }
     if command.shell:
         proc = subprocess.Popen(command.argv[0], shell=True, **popen_kwargs)
@@ -164,7 +177,18 @@ class ExecutorService:
         code = stream_command(command, on_line)
         success = code == 0
         if success:
-            self._mark_installed(tool, True)
+            # Verify the tool is actually runnable now (binary on the augmented
+            # PATH). This catches cases where a package "installs" but its binary
+            # is not yet findable, so the dashboard shows the true state.
+            from zorksec.services.discovery_service import binary_present
+            from zorksec.registry.catalog import CATALOG
+            check_binary = next(
+                (d.check_binary for d in CATALOG if d.slug == slug), "")
+            runnable = (not check_binary) or binary_present(check_binary)
+            self._mark_installed(tool, runnable)
+            if on_line and check_binary and not runnable:
+                on_line(f"[zorksec] note: '{check_binary}' installed but not yet on PATH; "
+                        "open a new terminal or re-run discovery.")
         self.history.record(slug, "install", success=success, exit_code=code,
                             detail=command.display())
         return code

@@ -81,3 +81,60 @@ def test_change_password_rejects_default_value(settings):
                 settings.default_password,
                 settings.default_password,
             )
+
+
+
+# ---------------------------------------------------------------------------
+# Security question / password recovery
+# ---------------------------------------------------------------------------
+def test_set_and_verify_security_question(settings):
+    with session_scope() as session:
+        auth = AuthService(session, settings)
+        auth.ensure_default_user()
+        auth.set_security_question(settings.default_username,
+                                   "First pet?", "Mr Whiskers")
+    with session_scope() as session:
+        auth = AuthService(session, settings)
+        assert auth.get_security_question(settings.default_username) == "First pet?"
+        # case/space-insensitive match
+        assert auth.verify_security_answer(settings.default_username, "  mr   whiskers ") is True
+        assert auth.verify_security_answer(settings.default_username, "wrong") is False
+
+
+def test_get_security_question_none_when_unset(settings):
+    with session_scope() as session:
+        auth = AuthService(session, settings)
+        auth.ensure_default_user()
+        assert auth.get_security_question(settings.default_username) is None
+        assert auth.get_security_question("ghost-user") is None
+
+
+def test_reset_password_with_correct_answer(settings):
+    with session_scope() as session:
+        auth = AuthService(session, settings)
+        auth.ensure_default_user()
+        auth.set_security_question(settings.default_username, "City?", "Hyderabad")
+    with session_scope() as session:
+        auth = AuthService(session, settings)
+        auth.reset_password_with_answer(settings.default_username, "hyderabad", "BrandNew99!")
+    with session_scope() as session:
+        auth = AuthService(session, settings)
+        result = auth.login(settings.default_username, "BrandNew99!")
+        assert result.username == settings.default_username
+
+
+def test_reset_password_wrong_answer_rejected(settings):
+    with session_scope() as session:
+        auth = AuthService(session, settings)
+        auth.ensure_default_user()
+        auth.set_security_question(settings.default_username, "City?", "Hyderabad")
+        with pytest.raises(AuthError):
+            auth.reset_password_with_answer(settings.default_username, "nope", "BrandNew99!")
+
+
+def test_reset_password_without_question_setup_rejected(settings):
+    with session_scope() as session:
+        auth = AuthService(session, settings)
+        auth.ensure_default_user()
+        with pytest.raises(AuthError):
+            auth.reset_password_with_answer(settings.default_username, "x", "BrandNew99!")

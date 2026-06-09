@@ -122,6 +122,13 @@ class TerminalManager:
                         os.chdir(cwd)
                     # A sane TERM makes interactive tools (less, msfconsole) behave.
                     os.environ.setdefault("TERM", "xterm-256color")
+                    # Ensure go/cargo/pip-user bin dirs are on PATH so freshly
+                    # installed tools are runnable in the browser terminal.
+                    try:
+                        from zorksec.utils.system import augmented_path
+                        os.environ["PATH"] = augmented_path()
+                    except Exception:
+                        pass
                     if interactive:
                         os.execvp("/bin/bash", ["/bin/bash", "-i"])
                     elif shell:
@@ -184,27 +191,50 @@ class TerminalManager:
     def _pump_pty(self, session, on_output, on_exit, sleep) -> None:
         fd = session.fd
         assert fd is not None
+        import time
+
+        buffer: list[str] = []
+        last_flush = time.monotonic()
+        FLUSH_INTERVAL = 0.03   # seconds: coalesce bursts for fewer socket emits
+        MAX_BUFFER = 16384      # but flush early if we accumulate a lot
+
+        def flush() -> None:
+            nonlocal last_flush
+            if buffer:
+                on_output("".join(buffer))
+                buffer.clear()
+            last_flush = time.monotonic()
+
         while True:
             try:
-                ready, _, _ = select.select([fd], [], [], 0.1)
+                # Shorter timeout keeps the terminal feeling responsive while
+                # still yielding to gevent between polls.
+                ready, _, _ = select.select([fd], [], [], 0.02)
             except (OSError, ValueError):
                 break
             if ready:
                 try:
-                    data = os.read(fd, 4096)
+                    # Larger reads drain output in fewer syscalls (faster).
+                    data = os.read(fd, 65536)
                 except OSError:
                     break
                 if not data:
                     break
-                on_output(data.decode("utf-8", errors="replace"))
+                buffer.append(data.decode("utf-8", errors="replace"))
+                buffered = sum(len(chunk) for chunk in buffer)
+                if (buffered >= MAX_BUFFER
+                        or (time.monotonic() - last_flush) >= FLUSH_INTERVAL):
+                    flush()
             else:
-                # No data ready; check whether the child has exited.
+                # Nothing pending: flush any buffered output, then check exit.
+                flush()
                 pid, status = os.waitpid(session.pid, os.WNOHANG)
                 if pid != 0:
                     session.exited = True
                     session.exit_code = os.waitstatus_to_exitcode(status)
                     break
             sleep(0)
+        flush()
         self._finalise(session, on_exit)
 
     def _pump_pipe(self, session, on_output, on_exit, sleep) -> None:  # pragma: no cover

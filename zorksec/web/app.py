@@ -150,6 +150,69 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
                         error = str(exc)
         return render_template("change_password.html", error=error, theme=theme())
 
+    # ------------------------------------------------------------------ password recovery
+    @app.route("/forgot-password", methods=["GET", "POST"])
+    def forgot_password():
+        """Step 1: user enters their username; we show their security question."""
+        error = None
+        question = None
+        username = ""
+        if request.method == "POST":
+            username = request.form.get("username", "").strip()
+            with session_scope(settings) as db:
+                question = AuthService(db, settings).get_security_question(username)
+            if not question:
+                error = ("No security question is set for that account, or the "
+                         "username is unknown. Ask an admin to reset it.")
+        return render_template("forgot_password.html", error=error,
+                               question=question, username=username)
+
+    @app.route("/reset-password", methods=["POST"])
+    def reset_password():
+        """Step 2: verify the answer and set a new password."""
+        username = request.form.get("username", "").strip()
+        answer = request.form.get("answer", "")
+        new = request.form.get("new_password", "")
+        confirm = request.form.get("confirm_password", "")
+        error = None
+        question = None
+        with session_scope(settings) as db:
+            auth = AuthService(db, settings)
+            question = auth.get_security_question(username)
+            if new != confirm:
+                error = "New passwords do not match."
+            else:
+                try:
+                    auth.reset_password_with_answer(username, answer, new)
+                    return redirect(url_for("login"))
+                except AuthError as exc:
+                    error = str(exc)
+        return render_template("forgot_password.html", error=error,
+                               question=question, username=username)
+
+    @app.route("/security-question", methods=["GET", "POST"])
+    @_login_required
+    def security_question():
+        """Let a logged-in user set/update their recovery question + answer."""
+        error = None
+        saved = False
+        current = None
+        username = flask_session.get("username")
+        with session_scope(settings) as db:
+            current = AuthService(db, settings).get_security_question(username)
+        if request.method == "POST":
+            q = request.form.get("question", "")
+            a = request.form.get("answer", "")
+            with session_scope(settings) as db:
+                try:
+                    AuthService(db, settings).set_security_question(username, q, a)
+                    saved = True
+                    current = q.strip()
+                except AuthError as exc:
+                    error = str(exc)
+        return render_template("security_question.html", theme=theme(),
+                               error=error, saved=saved, current=current)
+
     # ------------------------------------------------------------------ profile
     @app.route("/profile", methods=["POST"])
     @_login_required
@@ -224,6 +287,66 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
             custom=custom,
             title=title,
         )
+
+    @app.route("/usage")
+    @_login_required
+    def usage():
+        """Documentation/usage page for a tool, auto-opened in a new tab.
+
+        Shows the official docs link plus live, locally-generated usage
+        (``<tool> --help`` / ``man``) so it works for catalog tools, tools
+        pre-installed on Kali, and tools the user installed manually.
+        """
+        slug = request.args.get("tool", "")
+        with session_scope(settings) as db:
+            svc = RegistryService(db)
+            if svc.tools.count() == 0:
+                svc.seed_catalog()
+            tool = svc.get(slug)
+            from zorksec.services.usage_service import UsageService
+            info = UsageService.usage_for(tool, slug_override=slug)
+        return render_template("usage.html", theme=theme(), info=info)
+
+    @app.route("/api/usage")
+    @_login_required
+    def api_usage():
+        slug = request.args.get("tool", "")
+        binary = request.args.get("binary", "")
+        from zorksec.services.usage_service import UsageService
+        with session_scope(settings) as db:
+            svc = RegistryService(db)
+            tool = svc.get(slug)
+            # Build the usage info while the ORM object is still attached.
+            return UsageService.usage_for(tool, binary_override=binary,
+                                          slug_override=slug)
+
+    @app.route("/api/run-target", methods=["POST"])
+    @_login_required
+    def api_run_target():
+        """Launch a tool in a NATIVE Kali terminal window (option B).
+
+        The browser-terminal option (A) is handled by the SocketIO flow; this
+        endpoint covers "open in a real Kali terminal" by spawning a desktop
+        terminal emulator running the tool. Returns whether a terminal was
+        launched (it won't be on a headless host).
+        """
+        data = request.get_json(silent=True) or {}
+        slug = data.get("tool", "")
+        with session_scope(settings) as db:
+            tool = ToolRepository(db).get_by_slug(slug)
+            if tool is None:
+                return {"launched": False, "error": f"Unknown tool '{slug}'."}, 404
+            try:
+                cmd = build_run_command(tool)
+            except ExecutionError as exc:
+                return {"launched": False, "error": str(exc)}, 400
+            username = flask_session.get("username")
+            AuditRepository(db).record(
+                "exec", username=username,
+                detail=f"native-terminal run {slug}: {cmd.display()}", success=True)
+        from zorksec.services.usage_service import launch_native_terminal
+        launched, detail = launch_native_terminal(cmd.argv, cmd.shell, cmd.cwd)
+        return {"launched": launched, "detail": detail}
 
     # ------------------------------------------------------------------ API
     @app.route("/api/threatintel")

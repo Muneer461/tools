@@ -32,6 +32,9 @@
   <button type="submit">ENTER</button>
   <div class="creds">Default login &mdash; <b>{{ default_user }}</b> / <b>{{ default_pass }}</b><br>
   (you'll be asked to change it)</div>
+  <div style="margin-top:12px; text-align:center;">
+    <a href="{{ url_for('forgot_password') }}" style="color:#6fcf97; font-size:13px;">Forgot password?</a>
+  </div>
 </form>
 {% endblock %}
 {% block scripts %}

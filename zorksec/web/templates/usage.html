@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}ZorkSec - {{ info.name }} usage{% endblock %}
+{% block body %}
+<div class="usage-wrap">
+  <h1 style="color: var(--accent);">{{ info.name or info.binary }} <span style="font-size:14px; color:var(--muted);">({{ info.binary }})</span></h1>
+
+  {% if info.beginner_note %}
+  <p style="font-size:15px;">{{ info.beginner_note }}</p>
+  {% endif %}
+
+  {% if info.docs_url %}
+  <p>📖 Official documentation:
+    <a href="{{ info.docs_url }}" target="_blank" rel="noopener">{{ info.docs_url }}</a>
+  </p>
+  {% endif %}
+
+  <h2 style="margin-top:22px;">How to use it</h2>
+  {% if info.found %}
+    <p class="src-tag">Live output from <code>{{ info.binary }} {{ info.source }}</code> on this machine:</p>
+  {% else %}
+    <p class="src-tag">Not detected on this host yet.</p>
+  {% endif %}
+  <pre>{{ info.usage_text }}</pre>
+
+  <div style="margin-top:18px; display:flex; gap:10px; flex-wrap:wrap;">
+    {% if info.slug %}
+    <button onclick="window.open('/terminal?tool={{ info.slug }}&action=run','_blank')">
+      Run in browser terminal
+    </button>
+    {% endif %}
+    <button class="ghost" onclick="window.close()">Close tab</button>
+  </div>
+</div>
+{% endblock %}
