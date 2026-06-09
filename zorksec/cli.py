@@ -116,6 +116,26 @@ def cmd_deps(_args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_diagnose(args: argparse.Namespace) -> int:
+    """Run the Diagnostic Center checks from the command line."""
+    from zorksec.services.diagnostic_service import DiagnosticService
+    svc = DiagnosticService()
+    report = svc.run_full_diagnostic()
+    print(f"ZorkSec Diagnostic Center - overall: {report.overall.upper()}\n{'-' * 44}")
+    mark = {"ok": _OK, "warning": _WARN, "fail": _FAIL, "unknown": _WARN}
+    for check in report.checks:
+        print(f"{mark.get(check.status, _WARN)} {check.name}: {check.detail}")
+    if getattr(args, "repair", False):
+        print(f"{'-' * 44}\nAuto-repair:")
+        for result in svc.auto_repair():
+            state = "fixed" if result.success else ("failed" if result.attempted else "skipped")
+            print(f"  [{state}] {result.key}: {result.detail}")
+    print(f"{'-' * 44}\nRoot cause analysis:")
+    for line in svc.root_cause_analysis(report):
+        print(f"  - {line}")
+    return 1 if report.overall == "fail" else 0
+
+
 def cmd_version(_args: argparse.Namespace) -> int:
     print(f"{__app_name__}")
     print(f"Version : {__version__}")
@@ -262,6 +282,9 @@ def build_parser() -> argparse.ArgumentParser:
     tui.add_argument("--team", choices=["blue", "red", "both"], default="both",
                      help="team profile to load (default: both)")
     sub.add_parser("attack", help="show MITRE ATT&CK tactic coverage")
+    diag = sub.add_parser("diagnose", help="run the Diagnostic Center system checks")
+    diag.add_argument("--repair", action="store_true",
+                      help="attempt safe auto-repairs for failing checks")
     rep = sub.add_parser("report", help="generate and export a SOC report")
     rep.add_argument("--type", choices=["incident", "threat_hunt", "dfir",
                                         "assessment", "executive"], default="incident")
@@ -292,6 +315,7 @@ def main(argv: list[str] | None = None) -> int:
         "deps": cmd_deps,
         "tui": cmd_tui,
         "attack": cmd_attack,
+        "diagnose": cmd_diagnose,
         "report": cmd_report,
     }
     handler = dispatch.get(args.command)

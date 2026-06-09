@@ -65,3 +65,47 @@ def test_stream_command_captures_output_and_exit_code():
     code = stream_command(cmd, on_line=lines.append)
     assert code == 3
     assert any("hello" in line for line in lines)
+
+
+
+# ---------------------------------------------------------------------------
+# Install verification (reliability): binary presence + version probe
+# ---------------------------------------------------------------------------
+from zorksec.services.executor_service import VerificationResult, verify_tool
+
+
+def test_verify_tool_no_binary_is_ok():
+    # 'cyberchef' is a browser tool with no detection binary -> skipped, ok.
+    result = verify_tool("cyberchef")
+    assert isinstance(result, VerificationResult)
+    assert result.ok is True
+
+
+def test_verify_tool_detects_present_binary(monkeypatch):
+    import zorksec.services.executor_service as ex
+
+    monkeypatch.setattr(ex, "_check_binary_for", lambda slug: "python3")
+    result = verify_tool("fake-python-tool")
+    assert result.ok is True
+    assert result.binary == "python3"
+    assert result.binary_present is True
+    assert result.version_ok is True
+
+
+def test_verify_tool_missing_binary_fails(monkeypatch):
+    import zorksec.services.executor_service as ex
+
+    monkeypatch.setattr(ex, "_check_binary_for",
+                        lambda slug: "definitely-not-a-real-binary-xyz")
+    result = verify_tool("ghost-tool")
+    assert result.ok is False
+    assert result.binary_present is False
+    assert "not found" in result.reason
+
+
+def test_verification_result_summary():
+    ok = VerificationResult(slug="x", ok=True, binary="nmap",
+                            binary_path="/usr/bin/nmap", version_output="Nmap 7.94")
+    assert "verified" in ok.summary()
+    bad = VerificationResult(slug="y", ok=False, reason="binary not found")
+    assert "failed" in bad.summary()

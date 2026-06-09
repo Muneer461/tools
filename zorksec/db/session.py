@@ -68,6 +68,8 @@ _ADDITIVE_COLUMNS: dict[str, dict[str, str]] = {
     "users": {
         "security_question": "VARCHAR(255)",
         "security_answer_hash": "VARCHAR(255)",
+        "recovery_failed_count": "INTEGER NOT NULL DEFAULT 0",
+        "recovery_locked_until": "DATETIME",
     },
 }
 

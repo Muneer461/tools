@@ -15,7 +15,9 @@ from zorksec.web.app import create_app
 def client(zorksec_home):
     settings = get_settings()
     app, _socketio = create_app(settings)
-    app.config.update(TESTING=True)
+    # CSRF is disabled for the form-flow tests (Flask-WTF style); dedicated
+    # tests below verify CSRF enforcement explicitly.
+    app.config.update(TESTING=True, CSRF_ENABLED=False)
     return app.test_client()
 
 
@@ -257,3 +259,141 @@ def test_run_target_headless_falls_back(client, monkeypatch):
     monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
     data = client.post("/api/run-target", json={"tool": "nmap"}).get_json()
     assert data["launched"] is False
+
+
+
+# ---------------------------------------------------------------------------
+# Security hardening: CSRF, restricted CORS, persistent secret key, socket auth
+# ---------------------------------------------------------------------------
+import re as _re
+
+from flask_socketio import SocketIO
+
+
+@pytest.fixture()
+def csrf_client(zorksec_home):
+    """A client with CSRF protection ENABLED (default production behaviour)."""
+    settings = get_settings()
+    app, _sio = create_app(settings)
+    app.config.update(CSRF_ENABLED=True)
+    return app.test_client()
+
+
+def _csrf_token_from(html: str) -> str:
+    m = _re.search(r'name="csrf_token" value="([^"]+)"', html)
+    assert m, "CSRF token not found in form"
+    return m.group(1)
+
+
+def test_login_post_without_csrf_token_rejected(csrf_client):
+    resp = csrf_client.post("/login", data={"username": "zorksec", "password": "zorksec"})
+    assert resp.status_code == 400
+
+
+def test_login_post_with_csrf_token_succeeds(csrf_client):
+    page = csrf_client.get("/login").get_data(as_text=True)
+    token = _csrf_token_from(page)
+    resp = csrf_client.post("/login", data={
+        "username": "zorksec", "password": "zorksec", "csrf_token": token})
+    assert resp.status_code == 302  # accepted -> redirect
+
+
+def test_login_form_renders_csrf_field(client):
+    body = client.get("/login").get_data(as_text=True)
+    assert 'name="csrf_token"' in body
+
+
+def test_cors_origins_are_restricted_not_wildcard(zorksec_home):
+    settings = get_settings()
+    origins = settings.allowed_origins()
+    assert "*" not in origins
+    assert any("127.0.0.1" in o for o in origins)
+    assert all(o.startswith("http://") or o.startswith("https://") for o in origins)
+
+
+def test_secret_key_is_persistent_across_app_instances(zorksec_home):
+    settings = get_settings()
+    app1, _ = create_app(settings)
+    app2, _ = create_app(settings)
+    # A freshly minted key each restart would differ; persistence keeps it stable.
+    assert app1.config["SECRET_KEY"] == app2.config["SECRET_KEY"]
+    assert len(app1.config["SECRET_KEY"]) >= 32
+
+
+def test_secret_key_env_override(zorksec_home, monkeypatch):
+    monkeypatch.setenv("ZORKSEC_SECRET_KEY", "fixed-test-secret-value")
+    settings = get_settings()
+    app, _ = create_app(settings)
+    assert app.config["SECRET_KEY"] == "fixed-test-secret-value"
+
+
+def test_socketio_rejects_unauthenticated_connection(zorksec_home):
+    settings = get_settings()
+    app, socketio = create_app(settings)
+    app.config.update(TESTING=True, CSRF_ENABLED=False)
+    sio_client = socketio.test_client(app, flask_test_client=app.test_client())
+    # No login -> the connect handler returns False and refuses the socket.
+    assert sio_client.is_connected() is False
+
+
+def test_socketio_allows_authenticated_connection(zorksec_home):
+    settings = get_settings()
+    app, socketio = create_app(settings)
+    app.config.update(TESTING=True, CSRF_ENABLED=False)
+    flask_client = app.test_client()
+    flask_client.post("/login", data={"username": "zorksec", "password": "zorksec"})
+    flask_client.post("/change-password", data={
+        "old_password": "zorksec", "new_password": "StrongPass1!",
+        "confirm_password": "StrongPass1!"})
+    sio_client = socketio.test_client(app, flask_test_client=flask_client)
+    assert sio_client.is_connected() is True
+    sio_client.disconnect()
+
+
+# ---------------------------------------------------------------------------
+# Diagnostic Center + SOC utility web routes
+# ---------------------------------------------------------------------------
+def test_diagnostics_page_requires_login(client):
+    assert client.get("/diagnostics").status_code == 302
+
+
+def test_api_diagnostics_returns_report(client):
+    _login_full(client)
+    data = client.get("/api/diagnostics").get_json()
+    assert "checks" in data and "overall" in data
+    assert "root_cause" in data
+    assert any(c["key"] == "python" for c in data["checks"])
+
+
+def test_api_diagnostics_guide(client):
+    _login_full(client)
+    data = client.get("/api/diagnostics/guide").get_json()
+    assert "guide" in data and "disk" in data["guide"]
+
+
+def test_api_soc_ioc_parse(client):
+    _login_full(client)
+    data = client.post("/api/soc/ioc-parse",
+                       json={"text": "evil at 203.0.113.45 hxxp://x[.]test"}).get_json()
+    assert "203.0.113.45" in data["ips"]
+    assert "http://x.test" in data["urls"]
+
+
+def test_api_soc_ioc_generate(client):
+    _login_full(client)
+    data = client.post("/api/soc/ioc-generate",
+                       json={"indicators": ["1.2.3.4"], "format": "csv"}).get_json()
+    assert "1.2.3.4,ip" in data["output"]
+
+
+def test_api_soc_log_parse(client):
+    _login_full(client)
+    data = client.post("/api/soc/log-parse",
+                       json={"text": '{"a":1}\nuser=bob'}).get_json()
+    assert data["count"] == 2
+
+
+def test_api_soc_integrations(client):
+    _login_full(client)
+    data = client.get("/api/soc/integrations").get_json()
+    assert "cyberchef" in data

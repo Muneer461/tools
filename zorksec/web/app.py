@@ -12,13 +12,16 @@ Security posture (beginner-safe defaults):
 
 from __future__ import annotations
 
+import datetime as _dt
 import functools
+import hmac
 import secrets
 import shlex
 from typing import Callable
 
 from flask import (
     Flask,
+    abort,
     redirect,
     render_template,
     request,
@@ -71,6 +74,18 @@ def _login_required(view: Callable) -> Callable:
     return wrapped
 
 
+# Endpoints whose state-changing (POST) form submissions must carry a valid
+# CSRF token: login, password recovery/reset, settings, and admin forms.
+_CSRF_PROTECTED_ENDPOINTS = frozenset({
+    "login",
+    "change_password",
+    "forgot_password",
+    "reset_password",
+    "security_question",
+    "set_profile",
+})
+
+
 def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
     settings = settings or get_settings()
     init_db(settings)
@@ -80,11 +95,60 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
         template_folder="templates",
         static_folder="static",
     )
-    app.config["SECRET_KEY"] = secrets.token_hex(32)
+    # Persistent secret key (env / .env / on-disk file) so sessions survive
+    # restarts instead of being invalidated by a freshly minted key each boot.
+    app.config["SECRET_KEY"] = settings.resolve_secret_key()
     app.config["ZORKSEC_SETTINGS"] = settings
+    # CSRF protection is on by default; tests may disable it explicitly.
+    app.config.setdefault("CSRF_ENABLED", True)
+    # Harden the session cookie.
+    app.config.update(
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        PERMANENT_SESSION_LIFETIME=_dt.timedelta(
+            minutes=settings.session_timeout_minutes),
+    )
 
-    socketio = SocketIO(app, async_mode="gevent", cors_allowed_origins="*")
+    # CORS is restricted to localhost + any configured ZorkSec origins; the
+    # previous wildcard ("*") allowed any site to drive the Socket.IO terminal.
+    socketio = SocketIO(
+        app,
+        async_mode="gevent",
+        cors_allowed_origins=settings.allowed_origins(),
+    )
     terminals = TerminalManager()
+
+    # ------------------------------------------------------------------ CSRF
+    def _csrf_token() -> str:
+        """Return the per-session CSRF token, creating one on first use."""
+        token = flask_session.get("_csrf_token")
+        if not token:
+            token = secrets.token_urlsafe(32)
+            flask_session["_csrf_token"] = token
+        return token
+
+    # Make ``csrf_token()`` callable from every template.
+    app.jinja_env.globals["csrf_token"] = _csrf_token
+
+    def _csrf_enabled() -> bool:
+        return bool(app.config.get("CSRF_ENABLED", True))
+
+    @app.before_request
+    def _enforce_csrf():
+        if not _csrf_enabled():
+            return None
+        if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
+            return None
+        if request.endpoint not in _CSRF_PROTECTED_ENDPOINTS:
+            return None
+        sent = (request.form.get("csrf_token")
+                or request.headers.get("X-CSRFToken", ""))
+        expected = flask_session.get("_csrf_token", "")
+        if not expected or not sent or not hmac.compare_digest(sent, expected):
+            logger.warning("Rejected %s %s: missing/invalid CSRF token",
+                           request.method, request.path)
+            abort(400, description="Invalid or missing CSRF token.")
+        return None
 
     # ------------------------------------------------------------------ helpers
     def current_team() -> str:
@@ -92,6 +156,14 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
 
     def theme() -> dict:
         return THEMES.get(current_team(), THEMES["both"])
+
+    def _socket_authenticated() -> bool:
+        """True when the Socket.IO client has a valid, fully-provisioned session."""
+        if not flask_session.get("user_id"):
+            return False
+        if flask_session.get("must_change_password"):
+            return False
+        return True
 
     # ------------------------------------------------------------------ auth
     @app.route("/login", methods=["GET", "POST"])
@@ -105,6 +177,7 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
                 auth.ensure_default_user()
                 try:
                     result = auth.login(username, password, ip_address=request.remote_addr)
+                    flask_session.permanent = True
                     flask_session["user_id"] = result.user_id
                     flask_session["username"] = result.username
                     flask_session["must_change_password"] = result.must_change_password
@@ -377,6 +450,49 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
         with session_scope(settings) as db:
             return ThreatIntelService(db).lookup(data.get("indicator", ""))
 
+    # ------------------------------------------------------------------ SOC utilities
+    @app.route("/api/soc/integrations")
+    @_login_required
+    def api_soc_integrations():
+        from zorksec.services.soc_utils_service import SocUtilsService
+        return SocUtilsService.integrations()
+
+    @app.route("/api/soc/ioc-parse", methods=["POST"])
+    @_login_required
+    def api_soc_ioc_parse():
+        from zorksec.services.soc_utils_service import SocUtilsService
+        data = request.get_json(silent=True) or {}
+        return SocUtilsService.parse_iocs(data.get("text", ""))
+
+    @app.route("/api/soc/ioc-generate", methods=["POST"])
+    @_login_required
+    def api_soc_ioc_generate():
+        from zorksec.services.soc_utils_service import SocUtilsService
+        data = request.get_json(silent=True) or {}
+        indicators = data.get("indicators") or []
+        if isinstance(indicators, str):
+            indicators = [ln for ln in indicators.splitlines() if ln.strip()]
+        try:
+            output = SocUtilsService.generate_iocs(
+                indicators, data.get("format", "csv"), data.get("context", ""))
+        except ValueError as exc:
+            return {"error": str(exc)}, 400
+        return {"output": output, "format": data.get("format", "csv")}
+
+    @app.route("/api/soc/log-parse", methods=["POST"])
+    @_login_required
+    def api_soc_log_parse():
+        from zorksec.services.soc_utils_service import SocUtilsService
+        data = request.get_json(silent=True) or {}
+        return SocUtilsService.parse_logs(data.get("text", ""))
+
+    @app.route("/api/soc/pcap", methods=["POST"])
+    @_login_required
+    def api_soc_pcap():
+        from zorksec.services.soc_utils_service import SocUtilsService
+        data = request.get_json(silent=True) or {}
+        return SocUtilsService.analyze_pcap(data.get("path", ""))
+
     @app.route("/api/attack")
     @_login_required
     def api_attack():
@@ -455,6 +571,57 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
             for d in deps
         ]}
 
+    # ------------------------------------------------------------------ diagnostics
+    @app.route("/diagnostics")
+    @_login_required
+    def diagnostics():
+        return render_template("diagnostics.html", theme=theme(),
+                               team=current_team())
+
+    @app.route("/api/diagnostics")
+    @_login_required
+    def api_diagnostics():
+        from zorksec.services.diagnostic_service import DiagnosticService
+        report = DiagnosticService().run_full_diagnostic()
+        payload = report.to_dict()
+        payload["root_cause"] = DiagnosticService().root_cause_analysis(report)
+        return payload
+
+    @app.route("/api/diagnostics/repair", methods=["POST"])
+    @_login_required
+    def api_diagnostics_repair():
+        from zorksec.services.diagnostic_service import DiagnosticService
+        data = request.get_json(silent=True) or {}
+        keys = data.get("keys")  # optional list of check keys
+        username = flask_session.get("username")
+        results = DiagnosticService().auto_repair(keys)
+        with session_scope(settings) as db:
+            AuditRepository(db).record(
+                "diagnostic_repair", username=username,
+                detail=f"auto-repair {keys or 'all failing'}", success=True)
+        return {"results": [r.to_dict() for r in results]}
+
+    @app.route("/api/diagnostics/guide")
+    @_login_required
+    def api_diagnostics_guide():
+        from zorksec.services.diagnostic_service import DiagnosticService
+        return {"guide": DiagnosticService().manual_repair_guide()}
+
+    @app.route("/api/diagnostics/export", methods=["POST"])
+    @_login_required
+    def api_diagnostics_export():
+        from zorksec.services.diagnostic_service import DiagnosticService
+        data = request.get_json(silent=True) or {}
+        fmt = data.get("format", "markdown")
+        with session_scope(settings) as db:
+            svc = DiagnosticService()
+            report = svc.run_full_diagnostic()
+            try:
+                path = svc.export_report(report, fmt, session=db)
+            except ValueError as exc:
+                return {"error": str(exc)}, 400
+        return {"path": path}
+
     @app.route("/api/tools")
     @_login_required
     def api_tools():
@@ -494,12 +661,33 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
             return {"id": vm.id, "safe": check.ok, "message": check.message}
 
     # ------------------------------------------------------------------ socket
+    @socketio.on("connect")
+    def on_connect():
+        """Reject unauthenticated Socket.IO connections outright.
+
+        Returning ``False`` from the connect handler refuses the websocket, so
+        only logged-in users with a fully provisioned session (password already
+        changed) can open a terminal channel.
+        """
+        if not _socket_authenticated():
+            logger.warning("Rejected unauthenticated Socket.IO connection")
+            return False
+        return True
+
     @socketio.on("start")
     def on_start(data):
         """Begin a terminal session for a tool action or a flagged custom cmd."""
         from flask import request as sock_request  # sid lives on the request
 
         sid = sock_request.sid  # type: ignore[attr-defined]
+        # Defence-in-depth: validate the session on every command, not just at
+        # connect time, so a session that expired mid-connection cannot run.
+        if not _socket_authenticated():
+            socketio.emit("output",
+                          {"data": "Authentication required. Please log in again.\r\n"},
+                          to=sid)
+            socketio.emit("exit", {"code": 1}, to=sid)
+            return
         slug = (data or {}).get("tool", "")
         action = (data or {}).get("action", "run")
         custom = (data or {}).get("cmd", "")
@@ -578,6 +766,8 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
         from flask import request as sock_request
 
         sid = sock_request.sid  # type: ignore[attr-defined]
+        if not _socket_authenticated():
+            return
         sess = terminals.get(sid)
         if sess:
             sess.write((data or {}).get("data", ""))
@@ -587,6 +777,8 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
         from flask import request as sock_request
 
         sid = sock_request.sid  # type: ignore[attr-defined]
+        if not _socket_authenticated():
+            return
         sess = terminals.get(sid)
         if sess:
             sess.set_winsize(int((data or {}).get("rows", 24)),

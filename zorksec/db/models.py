@@ -46,6 +46,9 @@ class User(Base):
     # Password recovery: security question + bcrypt-hashed answer (optional).
     security_question: Mapped[str | None] = mapped_column(String(255), nullable=True)
     security_answer_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Password-recovery throttling (security-question reset flow).
+    recovery_failed_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    recovery_locked_until: Mapped[_dt.datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[_dt.datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
 
     api_keys: Mapped[list["ApiKey"]] = relationship(back_populates="user", cascade="all, delete-orphan")

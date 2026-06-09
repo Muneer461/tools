@@ -446,7 +446,66 @@ _RED: list[ToolDef] = [
 ]
 
 
-CATALOG: list[ToolDef] = _BLUE + _RED
+# ---------------------------------------------------------------------------
+# SOC ENHANCEMENTS: extra Threat Hunting, Detection Engineering, and SOC
+# Utilities tooling requested for the SOC analyst workflow.
+# ---------------------------------------------------------------------------
+_SOC: list[ToolDef] = [
+    # Threat Hunting
+    _t("falco", "Falco", "Cloud-native runtime security and threat detection.",
+       "Threat Hunting", "blue",
+       "Watches syscalls/containers in real time and alerts on suspicious behaviour.",
+       "github", "falcosecurity/falco", "falco --version",
+       "https://falco.org", "Apache-2.0", "falco", "falcosecurity/falco"),
+    _t("arkime", "Arkime", "Large-scale, full packet capture, indexing, and search.",
+       "Threat Hunting", "blue",
+       "Stores and lets you search full network traffic (PCAP) at scale.",
+       "github", "arkime/arkime", "", "https://arkime.com", "Apache-2.0",
+       "", "arkime/arkime"),
+
+    # Detection Engineering
+    _t("pysigma", "pySigma", "Python library to convert Sigma rules into SIEM queries.",
+       "Detection Engineering", "blue",
+       "The engine behind sigma-cli: turns Sigma rules into backend queries.",
+       "pip", "pysigma", "", "https://github.com/SigmaHQ/pySigma", "LGPL-2.1",
+       "", "SigmaHQ/pySigma"),
+    _t("atomic-red-team", "Atomic Red Team", "Library of small, portable detection tests.",
+       "Detection Engineering", "both",
+       "Run safe attack simulations to check whether your detections fire.",
+       "github", "redcanaryco/atomic-red-team", "",
+       "https://atomicredteam.io", "MIT", "", "redcanaryco/atomic-red-team"),
+    _t("caldera", "MITRE Caldera", "Automated adversary emulation platform.",
+       "Detection Engineering", "both",
+       "Emulates adversary techniques end-to-end to validate detections (lab use).",
+       "github", "mitre/caldera", "", "https://caldera.mitre.org", "Apache-2.0",
+       "", "mitre/caldera"),
+    _t("vectr", "VECTR", "Track and report purple-team detection coverage.",
+       "Detection Engineering", "blue",
+       "A platform to plan purple-team tests and measure detection coverage.",
+       "github", "SecurityRiskAdvisors/VECTR", "",
+       "https://vectr.io", "Apache-2.0", "", "SecurityRiskAdvisors/VECTR"),
+    _t("ossem", "OSSEM", "Open Source Security Events Metadata.",
+       "Detection Engineering", "blue",
+       "A common data model so detections work across different log sources.",
+       "github", "OTRF/OSSEM", "", "https://github.com/OTRF/OSSEM",
+       "MIT", "", "OTRF/OSSEM"),
+
+    # SOC Utilities
+    _t("attack-navigator", "ATT&CK Navigator", "Visualise and annotate the MITRE ATT&CK matrix.",
+       "SOC Utilities", "both",
+       "Build colour-coded ATT&CK heatmaps of your coverage and threats.",
+       "github", "mitre-attack/attack-navigator", "",
+       "https://mitre-attack.github.io/attack-navigator/", "Apache-2.0",
+       "", "mitre-attack/attack-navigator"),
+    _t("tshark", "tshark (Wireshark CLI)", "Command-line network protocol analyzer.",
+       "SOC Utilities", "both",
+       "Analyse PCAP capture files from the terminal to investigate traffic.",
+       "apt", "tshark", "tshark --version", "https://www.wireshark.org",
+       "GPL-2.0", "tshark", "wireshark/wireshark"),
+]
+
+
+CATALOG: list[ToolDef] = _BLUE + _RED + _SOC
 
 
 def catalog_by_team(team: str) -> list[ToolDef]:

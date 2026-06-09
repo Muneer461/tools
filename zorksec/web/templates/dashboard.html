@@ -6,6 +6,7 @@
     <h1>ZorkSec</h1>
     <div class="sub">{{ theme.name }} &middot; {{ username }}</div>
     <form method="post" action="{{ url_for('set_profile') }}" style="margin-bottom:14px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <select name="team" onchange="this.form.submit()" style="width:100%;">
         {% for key, t in themes.items() %}
         <option value="{{ key }}" {% if key == team %}selected{% endif %}>{{ t.name }}</option>
@@ -18,6 +19,7 @@
     {% endfor %}
     <hr style="border-color: rgba(255,255,255,0.08); margin: 14px 0;">
     <a class="cat" href="{{ url_for('lab') }}">🧪 Build My Lab</a>
+    <a class="cat" href="{{ url_for('diagnostics') }}">🩺 Diagnostic Center</a>
     <a class="cat" href="{{ url_for('security_question') }}">🔑 Recovery question</a>
     <a class="cat" href="{{ url_for('logout') }}">Logout</a>
   </aside>

@@ -26,6 +26,7 @@
 <form class="login-card" method="post">
   <h1>ZorkSec</h1>
   <div class="sub">SOC L1 Learning Edition</div>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   {% if error %}<div class="err">{{ error }}</div>{% endif %}
   <input name="username" placeholder="Username" autofocus autocomplete="username">
   <input name="password" type="password" placeholder="Password" autocomplete="current-password">
