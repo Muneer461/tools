@@ -109,3 +109,24 @@ def test_verification_result_summary():
     assert "verified" in ok.summary()
     bad = VerificationResult(slug="y", ok=False, reason="binary not found")
     assert "failed" in bad.summary()
+
+
+
+# ---------------------------------------------------------------------------
+# High-resource confirmation guard in install()
+# ---------------------------------------------------------------------------
+def test_install_heavy_tool_requires_confirmation(zorksec_home):
+    from zorksec.db.session import init_db, session_scope
+    from zorksec.services.executor_service import ExecutorService
+    from zorksec.services.registry_service import RegistryService
+    from zorksec.config import get_settings
+
+    settings = get_settings()
+    init_db(settings)
+    lines: list[str] = []
+    with session_scope(settings) as db:
+        RegistryService(db).seed_catalog()
+        # 'misp' is a heavy tool; without confirmation install must NOT run.
+        code = ExecutorService(db).install("misp", lines.append, confirmed=False)
+    assert code == 125
+    assert any("HIGH RESOURCE WARNING" in ln for ln in lines)

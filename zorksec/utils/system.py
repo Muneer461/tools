@@ -78,12 +78,23 @@ def extra_bin_dirs() -> list[Path]:
 
 
 def augmented_path() -> str:
-    """Return ``$PATH`` with the extra per-user bin dirs prepended."""
+    """Return ``$PATH`` with the extra per-user bin dirs prepended.
+
+    The extra tool dirs (go/cargo/pip-user/snap/…) come first so freshly
+    installed binaries win, followed by the inherited PATH. The whole result is
+    de-duplicated while preserving order, so repeated entries in the inherited
+    PATH do not pile up.
+    """
     current = os.environ.get("PATH", "")
-    extra = os.pathsep.join(str(d) for d in extra_bin_dirs())
-    if not extra:
-        return current
-    return f"{extra}{os.pathsep}{current}" if current else extra
+    ordered = [str(d) for d in extra_bin_dirs()]
+    ordered += [p for p in current.split(os.pathsep) if p]
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for entry in ordered:
+        if entry not in seen:
+            seen.add(entry)
+            deduped.append(entry)
+    return os.pathsep.join(deduped)
 
 
 def tool_env() -> dict[str, str]:

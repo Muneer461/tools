@@ -83,6 +83,28 @@ def cmd_discover(_args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_health(args: argparse.Namespace) -> int:
+    """Refresh and display repository health (cached, 60-min TTL)."""
+    from zorksec.config import get_settings
+    from zorksec.services.health_service import HealthService, load_health_cache
+    settings = get_settings()
+    force = bool(getattr(args, "force", False))
+    with session_scope(settings) as session:
+        svc = RegistryService(session)
+        if svc.tools.count() == 0:
+            svc.seed_catalog()
+        result = HealthService(session).refresh_all(settings, force=force)
+    if result.get("skipped"):
+        print(f"{_OK} Health cache is fresh ({result['cached']} tools); use --force to refresh.")
+    else:
+        print(f"{_OK} Health refreshed: {result['refreshed']} tool(s) scored.")
+    cache = load_health_cache(settings).get("tools", {})
+    for slug, info in sorted(cache.items(),
+                             key=lambda kv: kv[1].get("score", 0))[:10]:
+        print(f"  {info.get('status','?'):<10} {info.get('score',0):>3}/100  {slug}")
+    return 0
+
+
 def cmd_tui(args: argparse.Namespace) -> int:
     """Launch the interactive terminal UI."""
     try:
@@ -274,6 +296,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("doctor", help="validate environment, dependencies, and database")
     sub.add_parser("version", help="print version information")
     sub.add_parser("discover", help="detect catalog tools already installed on this host")
+    health = sub.add_parser("health", help="refresh repository health scores (cached 60 min)")
+    health.add_argument("--force", action="store_true",
+                        help="force a refresh even if the cache is still fresh")
     sub.add_parser("deps", help="show build/runtime dependency status")
     cat = sub.add_parser("catalog", help="list the tool catalog for a team profile")
     cat.add_argument("--team", choices=["blue", "red", "both"], default="both",
@@ -312,6 +337,7 @@ def main(argv: list[str] | None = None) -> int:
         "version": cmd_version,
         "catalog": cmd_catalog,
         "discover": cmd_discover,
+        "health": cmd_health,
         "deps": cmd_deps,
         "tui": cmd_tui,
         "attack": cmd_attack,

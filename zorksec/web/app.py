@@ -571,6 +571,18 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
             for d in deps
         ]}
 
+    @app.route("/api/tools/<slug>/resource-check")
+    @_login_required
+    def api_resource_check(slug):
+        """Return the high-resource install warning for a tool (if any)."""
+        from zorksec.services.resource_check_service import ResourceCheckService
+        warning = ResourceCheckService.warning_for(slug)
+        if warning is None:
+            return {"slug": slug, "requires_confirmation": False}
+        payload = warning.to_dict()
+        payload["requires_confirmation"] = True
+        return payload
+
     # ------------------------------------------------------------------ diagnostics
     @app.route("/diagnostics")
     @_login_required
@@ -713,6 +725,23 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
                     return
                 try:
                     if action == "install":
+                        # Heavy tools need an explicit YES confirmation first.
+                        from zorksec.services.resource_check_service import (
+                            ResourceCheckService,
+                        )
+                        confirmed = bool((data or {}).get("confirmed"))
+                        if (ResourceCheckService.requires_confirmation(slug)
+                                and not confirmed):
+                            warning = ResourceCheckService.warning_for(slug)
+                            box = warning.render_box() if warning else ""
+                            socketio.emit("output",
+                                          {"data": box.replace("\n", "\r\n") + "\r\n"},
+                                          to=sid)
+                            socketio.emit("output",
+                                          {"data": "Confirmation required: re-run install "
+                                                   "with YES to proceed.\r\n"}, to=sid)
+                            socketio.emit("exit", {"code": 125}, to=sid)
+                            return
                         cmd = build_install_command(
                             tool.install_method, tool.install_target, slug
                         )
@@ -880,6 +909,14 @@ def run_web(host: str | None = None, port: int | None = None,
 
     if open_browser:
         _open_browser_when_ready(url, bind_host, bind_port)
+
+    # Kick off a non-blocking repository-health refresh (cached, 60-min TTL) so
+    # the dashboard shows live scores without delaying startup.
+    try:
+        from zorksec.services.health_service import start_background_refresh
+        start_background_refresh(settings)
+    except Exception as exc:  # pragma: no cover - never block startup on this
+        logger.warning("Could not start background health refresh: %s", exc)
 
     try:
         socketio.run(app, host=bind_host, port=bind_port)

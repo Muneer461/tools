@@ -21,6 +21,8 @@ check_binary    executable name used for installed-state detection (via PATH)
 github          "owner/repo" used by the repository-health engine (optional)
 requires_isolation  True for malware/RE tools that must run sandboxed
 attack          list of (technique_id, technique_name, tactic) ATT&CK mappings
+tier            CORE | ADVANCED | ENTERPRISE | EXTERNAL | LAB (deployment weight)
+resource_class  light | medium | heavy | enterprise (host resource demand)
 """
 
 from __future__ import annotations
@@ -45,6 +47,8 @@ class ToolDef:
     github: str = ""
     requires_isolation: bool = False
     attack: list[tuple[str, str, str]] = field(default_factory=list)
+    tier: str = "CORE"
+    resource_class: str = "light"
 
 
 def _t(*args, **kwargs) -> ToolDef:  # small helper for compact definitions
@@ -505,7 +509,57 @@ _SOC: list[ToolDef] = [
 ]
 
 
-CATALOG: list[ToolDef] = _BLUE + _RED + _SOC
+# ---------------------------------------------------------------------------
+# SOCIAL MEDIA OSINT
+# ---------------------------------------------------------------------------
+# Open-source intelligence on social platforms for *legitimate* purposes only:
+# threat intel, fraud/abuse investigation, missing persons, brand protection,
+# and SOC investigations. These are passive lookup/enumeration tools. Account
+# compromise tooling (credential stuffing, brute force, session hijacking) is
+# explicitly out of scope and intentionally NOT included.
+_SOCIAL_DISCLAIMER = (
+    "OSINT for authorized investigations only - never access accounts without "
+    "permission. "
+)
+_SOCIAL: list[ToolDef] = [
+    # Note: Sherlock, Maigret, and Holehe already live in "OSINT for SOC";
+    # the tools below are the social-media-specific additions.
+    _t("phoneinfoga", "PhoneInfoga", "OSINT reconnaissance on phone numbers.",
+       "Social Media OSINT", "blue",
+       _SOCIAL_DISCLAIMER + "Gathers public information about a phone number.",
+       "go", "github.com/sundowndev/phoneinfoga/v2@latest", "phoneinfoga version",
+       "https://github.com/sundowndev/phoneinfoga", "GPL-3.0", "phoneinfoga",
+       "sundowndev/phoneinfoga", False,
+       [("T1589", "Gather Victim Identity Information", "Reconnaissance")],
+       "CORE", "light"),
+    _t("ignorant", "Ignorant", "Check which sites a phone number is registered on.",
+       "Social Media OSINT", "blue",
+       _SOCIAL_DISCLAIMER + "Phone-number equivalent of Holehe.",
+       "pip", "ignorant", "ignorant --help",
+       "https://github.com/megadose/ignorant", "GPL-3.0", "ignorant",
+       "megadose/ignorant", False, [], "CORE", "light"),
+    _t("social-analyzer", "Social Analyzer", "Analyse and find profiles across social media.",
+       "Social Media OSINT", "blue",
+       _SOCIAL_DISCLAIMER + "API/CLI to find and rate profiles across many platforms.",
+       "pip", "social-analyzer", "social-analyzer --help",
+       "https://github.com/qeeqbox/social-analyzer", "AGPL-3.0", "social-analyzer",
+       "qeeqbox/social-analyzer", False, [], "ADVANCED", "light"),
+    _t("blackbird", "Blackbird", "Fast username search across social networks.",
+       "Social Media OSINT", "blue",
+       _SOCIAL_DISCLAIMER + "Quickly enumerates accounts for a username.",
+       "github", "p1ngul1n0/blackbird", "python3 blackbird.py --help",
+       "https://github.com/p1ngul1n0/blackbird", "MIT", "", "p1ngul1n0/blackbird", False,
+       [], "CORE", "light"),
+    _t("osintgram", "Osintgram", "OSINT on public Instagram profiles.",
+       "Social Media OSINT", "blue",
+       _SOCIAL_DISCLAIMER + "Analyses public Instagram profile data for investigations.",
+       "github", "Datalux/Osintgram", "python3 main.py --help",
+       "https://github.com/Datalux/Osintgram", "GPL-3.0", "", "Datalux/Osintgram", False,
+       [], "ADVANCED", "medium"),
+]
+
+
+CATALOG: list[ToolDef] = _BLUE + _RED + _SOC + _SOCIAL
 
 
 def catalog_by_team(team: str) -> list[ToolDef]:

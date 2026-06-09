@@ -142,3 +142,33 @@ Validation coverage includes:
 
 **Architecture preserved:** all changes were additive or in-place root-cause
 fixes. No working component was rewritten.
+
+
+
+---
+
+## Addendum — v3.0 follow-up (applied within the existing architecture)
+
+**Test result after this round:** ✅ **179 passed** (149 + 30 new).
+
+| Item | Status | Where |
+|------|--------|-------|
+| Per-method install timeouts + process-group kill (BUG-10) | ✅ | `executor_service.py`: `INSTALL_TIMEOUTS`, watchdog-based `stream_command` (kills the whole group via `os.killpg`; returns 124), `install()` passes the per-method timeout and reports 124 distinctly |
+| `tier` + `resource_class` on `ToolDef` | ✅ | `registry/catalog.py` (additive, default CORE/light) |
+| Social Media OSINT category (OSINT-only, with disclaimers) | ✅ | `registry/catalog.py` `_SOCIAL`: PhoneInfoga, Ignorant, Social Analyzer, Blackbird, Osintgram (Sherlock/Maigret/Holehe already existed in "OSINT for SOC") |
+| High-resource "type YES" warning + system RAM/disk/CPU comparison | ✅ | `resource_check_service.py`; wired into `ExecutorService.install(confirmed=…)` (returns 125 until confirmed), the Socket.IO install path, and `GET /api/tools/<slug>/resource-check` |
+| Background Task Manager (QUEUED/RUNNING/COMPLETED/FAILED/CANCELLED/TIMEOUT) | ✅ | `task_manager.py`: `submit/status/cancel/list_all/wait`, per-command timeouts, group-kill on timeout/cancel |
+| Offline mode + `PENDING_ACTIONS.md` | ✅ | `offline_service.py`: `is_online()`, dedup queue, markdown render, `process_pending()` with 3 retries |
+| Background + cached health engine (`tool_health.json`, 60-min TTL) | ✅ | `health_service.py`: `refresh_all`, cache helpers, `start_background_refresh` (own session, fail-safe); started in `run_web`; `zorksec health [--force]` CLI |
+| PATH dedup hardening (v3.0 BUG-1 spec) | ✅ | `utils/system.py` `augmented_path` now de-duplicates the full PATH (order preserved) |
+
+**New tests:** `test_paths.py`, `test_resource_check.py`, `test_task_manager.py`,
+`test_offline.py`, plus health-cache cases in `test_health.py` and a heavy-tool
+confirmation case in `test_executor.py`.
+
+**Still deferred (documented, larger UI/scope):** "Top-20-per-category" catalog
+expansion, login/dashboard visual redesign (matrix/glassmorphism), and the
+first-login 3-step wizard UI (the underlying DB-backed password-change +
+security-question flow already exists). Diagnostic export remains md/html/json/csv
+(no PDF). These were left out deliberately to preserve the working architecture
+and keep the suite green.

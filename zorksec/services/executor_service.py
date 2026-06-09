@@ -16,7 +16,10 @@ set, so the dashboard reflects reality rather than "the package manager exited
 
 from __future__ import annotations
 
+import os
+import signal
 import subprocess
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from shlex import quote as shlex_quote
@@ -31,6 +34,26 @@ from zorksec.utils.logging import get_logger
 from zorksec.utils.system import augmented_path, soc_tools_dir, tool_env
 
 logger = get_logger(__name__)
+
+# Per-install-method timeouts (seconds). A hung package manager / clone must
+# never block a worker forever, so each method gets a sane ceiling. On timeout
+# the whole process group is killed (see ``stream_command``).
+INSTALL_TIMEOUTS: dict[str, int] = {
+    "apt": 180,
+    "snap": 180,
+    "pip": 120,
+    "go": 120,
+    "cargo": 120,
+    "gem": 60,
+    "docker": 300,
+    "github": 30,  # shallow git clone
+}
+DEFAULT_INSTALL_TIMEOUT = 180
+
+
+def install_timeout_for(method: str) -> int:
+    """Return the timeout (seconds) to apply for a given install method."""
+    return INSTALL_TIMEOUTS.get((method or "").lower(), DEFAULT_INSTALL_TIMEOUT)
 
 
 class ExecutionError(RuntimeError):
@@ -229,9 +252,14 @@ def stream_command(
 ) -> int:
     """Execute a command, streaming combined stdout/stderr line-by-line.
 
-    Returns the process exit code. ``on_line`` receives each line (without the
-    trailing newline). Designed for live terminals; the web layer reuses the
-    same builder with a PTY.
+    Returns the process exit code (124 on timeout). ``on_line`` receives each
+    line (without the trailing newline). Designed for live terminals; the web
+    layer reuses the same builder with a PTY.
+
+    The wall-clock ``timeout`` is enforced by a watchdog thread, not by
+    ``proc.wait`` alone: a hung process that keeps stdout open (producing no
+    output) would otherwise block the read loop forever. When the watchdog
+    fires it kills the whole process group, which closes stdout and unblocks us.
     """
     popen_kwargs: dict = {
         "stdout": subprocess.PIPE,
@@ -241,11 +269,25 @@ def stream_command(
         "cwd": command.cwd,
         # Augment PATH so freshly go/cargo/pip-installed tools are found.
         "env": tool_env(),
+        # Run in a new session/process group so that on timeout we can kill the
+        # whole tree (e.g. 'go install' or a shell pipeline), not just argv[0].
+        "start_new_session": True,
     }
     if command.shell:
         proc = subprocess.Popen(command.argv[0], shell=True, **popen_kwargs)
     else:
         proc = subprocess.Popen(command.argv, **popen_kwargs)
+
+    timed_out = {"flag": False}
+    watchdog: "threading.Timer | None" = None
+    if timeout is not None:
+        def _on_timeout() -> None:
+            timed_out["flag"] = True
+            _kill_process_group(proc)
+
+        watchdog = threading.Timer(timeout, _on_timeout)
+        watchdog.daemon = True
+        watchdog.start()
 
     assert proc.stdout is not None
     try:
@@ -253,16 +295,48 @@ def stream_command(
             text = line.rstrip("\n")
             if on_line:
                 on_line(text)
-        proc.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        if on_line:
-            on_line("[zorksec] command timed out and was terminated")
-        return 124
+        proc.wait()
     finally:
+        if watchdog is not None:
+            watchdog.cancel()
         if proc.stdout:
             proc.stdout.close()
+
+    if timed_out["flag"]:
+        logger.warning("TIMEOUT: '%s' killed after %ss", command.display(), timeout)
+        if on_line:
+            on_line(f"[zorksec] TIMEOUT: command killed after {timeout}s")
+        return 124
     return proc.returncode if proc.returncode is not None else 1
+
+
+def _kill_process_group(proc: "subprocess.Popen") -> None:
+    """Terminate a process and its whole group (SIGTERM, then SIGKILL).
+
+    Started with ``start_new_session=True``, the child is a process-group
+    leader, so ``killpg`` reaps grandchildren (compilers, git, etc.) too.
+    """
+    try:
+        pgid = os.getpgid(proc.pid)
+    except (ProcessLookupError, OSError):
+        pgid = None
+    try:
+        if pgid is not None:
+            os.killpg(pgid, signal.SIGTERM)
+        else:
+            proc.terminate()
+    except (ProcessLookupError, OSError):
+        pass
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        try:
+            if pgid is not None:
+                os.killpg(pgid, signal.SIGKILL)
+            else:
+                proc.kill()
+        except (ProcessLookupError, OSError):
+            pass
 
 
 class ExecutorService:
@@ -273,10 +347,26 @@ class ExecutorService:
         self.tools = ToolRepository(session)
         self.history = HistoryRepository(session)
 
-    def install(self, slug: str, on_line: Callable[[str], None] | None = None) -> int:
+    def install(self, slug: str, on_line: Callable[[str], None] | None = None,
+                confirmed: bool = False) -> int:
         tool = self.tools.get_by_slug(slug)
         if tool is None:
             raise ExecutionError(f"Unknown tool '{slug}'.")
+
+        # High-resource tools require an explicit confirmation before we run a
+        # potentially long/heavy deployment. Callers pass confirmed=True after
+        # the user types YES; otherwise we show the warning and stop (code 125).
+        from zorksec.services.resource_check_service import ResourceCheckService
+        if ResourceCheckService.requires_confirmation(slug) and not confirmed:
+            warning = ResourceCheckService.warning_for(slug)
+            if on_line and warning:
+                on_line(warning.render_box())
+                if warning.shortfalls:
+                    on_line("[zorksec] WARNING: " + "; ".join(warning.shortfalls))
+                on_line("[zorksec] Re-run with confirmation (type YES) to proceed.")
+            logger.info("Install '%s' needs high-resource confirmation; not run", slug)
+            return 125
+
         command = build_install_command(tool.install_method, tool.install_target, slug)
         if command is None:
             if on_line:
@@ -289,11 +379,20 @@ class ExecutorService:
 
         # 1) Capture PATH state *before* the install so we can report changes.
         path_before = augmented_path()
-        logger.info("Install '%s': running '%s'", slug, command.display())
+        timeout = install_timeout_for(tool.install_method)
+        logger.info("Install '%s': running '%s' (timeout %ss)",
+                    slug, command.display(), timeout)
         if on_line:
             on_line(f"[zorksec] $ {command.display()}")
 
-        code = stream_command(command, on_line)
+        code = stream_command(command, on_line, timeout=timeout)
+
+        # Surface timeouts explicitly so callers don't treat them as a clean fail.
+        if code == 124:
+            self._mark_installed(tool, False)
+            self.history.record(slug, "install", success=False, exit_code=124,
+                                detail=f"install TIMED OUT after {timeout}s: {command.display()}")
+            return code
 
         # 2) Re-check PATH *after* the install (go/cargo/pip-user may add dirs).
         path_after = augmented_path()
