@@ -28,7 +28,9 @@
 </style>
 {% endblock %}
 {% block body %}
-<div class="diag-wrap">
+<div class="diag-wrap" id="kali-root"
+     data-scan-url="{{ url_for('api_kali_scan') }}"
+     data-repair-url="{{ url_for('api_kali_repair') }}">
   <h1 style="color: var(--accent);">Kali Linux Diagnostics</h1>
   <p class="meta">Scans the Kali/Debian package subsystem (apt, dpkg, repos,
      locks, PATH) for problems that block tool installs. Choose <b>Auto</b> to
@@ -36,9 +38,9 @@
 
   <div id="distro" class="meta"></div>
   <div class="diag-actions">
-    <button onclick="scan()">Run Kali Scan</button>
-    <button onclick="autoRepairAll()">Auto Repair All</button>
-    <button class="ghost" onclick="manualGuide()">Manual Repair Guide</button>
+    <button data-action="kali-scan">Run Kali Scan</button>
+    <button data-action="kali-repair-all">Auto Repair All</button>
+    <button class="ghost" data-action="kali-manual">Manual Repair Guide</button>
     <a href="{{ url_for('dashboard') }}" style="margin-left:auto; align-self:center;">Back</a>
   </div>
 
@@ -51,87 +53,5 @@
 </div>
 {% endblock %}
 {% block scripts %}
-<script>
-  function badge(s) { return '<span class="badge ' + s + '">' + s.toUpperCase() + '</span>'; }
-  function setStatus(m) { document.getElementById('status').textContent = m; }
-
-  function renderSteps(steps) {
-    if (!steps || !steps.length) return '';
-    return '<div class="steps">' + steps.map(s => '<code>$ ' +
-      s.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</code>').join('') + '</div>';
-  }
-
-  async function scan() {
-    setStatus('Scanning Kali package subsystem…');
-    const r = await fetch('{{ url_for("api_kali_scan") }}');
-    const data = await r.json();
-    document.getElementById('distro').innerHTML =
-      'Detected distro: <b>' + data.distro + '</b> ' +
-      (data.is_kali ? badge('ok') : badge('skipped'));
-    const c = data.counts;
-    document.getElementById('overall').innerHTML =
-      'Overall: ' + badge(data.overall) +
-      ' &nbsp; ok:' + c.ok + ' warning:' + c.warning + ' fail:' + c.fail + ' skipped:' + c.skipped;
-    document.getElementById('checks').innerHTML = data.checks.map(ch => {
-      const fixBtn = ch.fixable
-        ? '<button onclick="autoRepair(\'' + ch.key + '\')">Auto fix</button>' : '';
-      const manBtn = (ch.manual_steps && ch.manual_steps.length)
-        ? '<button onclick="toggleSteps(\'' + ch.key + '\')">Manual steps</button>' : '';
-      return '<div class="check"><h3><span>' + ch.name + '</span>' + badge(ch.status) + '</h3>' +
-        '<div class="detail">' + (ch.detail || '') + '</div>' +
-        (ch.root_cause ? '<div class="meta">Root cause: ' + ch.root_cause + '</div>' : '') +
-        ((ch.status === 'fail' || ch.status === 'warning')
-          ? '<div class="row-actions">' + fixBtn + manBtn + '</div>' +
-            '<div id="steps-' + ch.key + '" style="display:none;">' + renderSteps(ch.manual_steps) + '</div>'
-          : '') +
-        '</div>';
-    }).join('');
-    document.getElementById('rca').innerHTML = (data.root_cause || [])
-      .map(x => '<li>' + x + '</li>').join('');
-    setStatus('Scan complete.');
-  }
-
-  function toggleSteps(key) {
-    const el = document.getElementById('steps-' + key);
-    if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
-  }
-
-  async function autoRepair(key) {
-    setStatus('Applying safe auto-fix for ' + key + '…');
-    const r = await fetch('{{ url_for("api_kali_repair") }}', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({mode:'auto', keys:[key]})});
-    const data = await r.json();
-    setStatus((data.results||[]).map(x => x.key + ': ' +
-      (x.attempted ? (x.success ? 'fixed' : 'failed') : 'skipped') +
-      (x.detail ? ' - ' + x.detail : '')).join(' | '));
-    scan();
-  }
-
-  async function autoRepairAll() {
-    setStatus('Applying safe auto-fixes for all failing checks…');
-    const r = await fetch('{{ url_for("api_kali_repair") }}', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({mode:'auto'})});
-    const data = await r.json();
-    setStatus((data.results||[]).map(x => x.key + ' -> ' +
-      (x.attempted ? (x.success ? 'fixed' : 'failed') : 'skipped')).join(', '));
-    scan();
-  }
-
-  async function manualGuide() {
-    const r = await fetch('{{ url_for("api_kali_repair") }}', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({mode:'manual'})});
-    const data = await r.json();
-    const guide = data.guide || {};
-    const keys = Object.keys(guide);
-    if (!keys.length) { setStatus('No manual steps needed - nothing failing.'); return; }
-    document.getElementById('checks').innerHTML = keys.map(k =>
-      '<div class="check"><h3><span>' + k + '</span></h3>' + renderSteps(guide[k]) + '</div>').join('');
-    setStatus('Manual repair guide loaded. Copy-paste the steps into a terminal.');
-  }
-
-  scan();
-</script>
+<script src="{{ url_for('static', filename='kali_diagnostics.js') }}?v={{ asset_v }}"></script>
 {% endblock %}

@@ -496,3 +496,107 @@ def test_base_assets_are_cache_busted(client):
     _login_full(client)
     body = client.get("/").get_data(as_text=True)
     assert "zorksec.css?v=" in body
+
+
+
+# ---------------------------------------------------------------------------
+# Event-handler robustness: external JS + delegation (no inline onclick)
+# ---------------------------------------------------------------------------
+def test_dashboard_uses_external_js_and_delegation(client):
+    _login_full(client)
+    body = client.get("/").get_data(as_text=True)
+    # Logic moved to an external, cache-busted file.
+    assert "static/dashboard.js?v=" in body
+    # Buttons use data-action (delegation), not fragile inline onclick.
+    assert 'data-action="tool-install"' in body
+    assert 'data-action="tool-run"' in body
+    assert 'data-action="tool-docs"' in body
+    assert "onclick=" not in body, "dashboard must not rely on inline onclick handlers"
+
+
+def test_shared_ui_safety_net_loaded_everywhere(client):
+    _login_full(client)
+    for route in ("/", "/diagnostics", "/kali-diagnostics", "/lab", "/help"):
+        body = client.get(route).get_data(as_text=True)
+        assert "static/zorksec-ui.js?v=" in body, f"{route} missing shared UI script"
+
+
+def test_kali_diagnostics_uses_external_js_and_endpoints(client):
+    _login_full(client)
+    body = client.get("/kali-diagnostics").get_data(as_text=True)
+    assert "static/kali_diagnostics.js?v=" in body
+    assert 'data-action="kali-scan"' in body
+    assert 'data-scan-url=' in body and 'data-repair-url=' in body
+    assert "onclick=" not in body
+
+
+def test_new_js_assets_serve(client):
+    for path in ("/static/zorksec-ui.js", "/static/dashboard.js",
+                 "/static/kali_diagnostics.js", "/static/diagnostics.js"):
+        resp = client.get(path)
+        assert resp.status_code == 200, f"{path} -> {resp.status_code}"
+        assert resp.headers["Content-Type"].startswith(
+            ("application/javascript", "text/javascript"))
+
+
+def test_diagnostic_center_uses_external_js(client):
+    _login_full(client)
+    body = client.get("/diagnostics").get_data(as_text=True)
+    assert "static/diagnostics.js?v=" in body
+    assert 'data-action="diag-run"' in body
+    assert "onclick=" not in body
+
+
+
+# ---------------------------------------------------------------------------
+# Login-security enforcement (must never regress): every route requires auth,
+# tools are never reachable without a completed login + wizard.
+# ---------------------------------------------------------------------------
+# Endpoints intentionally reachable without an authenticated session.
+_PUBLIC_ENDPOINTS = {"login", "logout", "forgot_password", "reset_password", "static"}
+
+
+def test_every_route_requires_authentication(client):
+    """Auto-enumerate the URL map: a fresh (logged-out) session must be blocked
+    from EVERY non-public route. Guards against a new route shipping without
+    @_login_required (which would let tools be bypassed)."""
+    import re as _re
+
+    leaks = []
+    for rule in client.application.url_map.iter_rules():
+        if rule.endpoint in _PUBLIC_ENDPOINTS:
+            continue
+        methods = rule.methods - {"HEAD", "OPTIONS"}
+        method = "GET" if "GET" in methods else sorted(methods)[0]
+        path = _re.sub(r"<[^>]+>", "x", rule.rule)
+        resp = client.open(path, method=method)
+        location = resp.headers.get("Location", "")
+        # Acceptable "blocked" outcomes: redirect to login, 401, or 400 (CSRF
+        # guard rejects the unauthenticated state-changing POST first). The key
+        # invariant: the action is never performed and no dashboard/tool is shown.
+        blocked = (
+            (resp.status_code in (301, 302) and "login" in location)
+            or resp.status_code in (400, 401, 403)
+        )
+        if not blocked:
+            leaks.append((method, path, resp.status_code, location))
+    assert not leaks, f"routes reachable without login: {leaks}"
+
+
+def test_tools_blocked_until_wizard_complete(client):
+    """During the forced first-login wizard, tool/terminal routes stay blocked."""
+    client.post("/login", data={"username": "zorksec", "password": "zorksec"})
+    for path in ("/", "/terminal?tool=nmap", "/usage?tool=nmap", "/lab", "/api/tools"):
+        resp = client.get(path)
+        assert resp.status_code == 302
+        assert "change-password" in resp.headers["Location"]
+
+
+def test_default_password_rejected_after_change(client):
+    """Once the default password is changed, it can never log in again."""
+    _login_full(client)               # changes zorksec/zorksec -> StrongPass1!
+    client.get("/logout")
+    fresh = client
+    fresh.post("/login", data={"username": "zorksec", "password": "zorksec"})
+    # Default creds no longer grant access.
+    assert fresh.get("/").status_code == 302

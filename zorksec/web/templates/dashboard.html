@@ -6,7 +6,7 @@
 <!-- ===== Header ===== -->
 <header class="header">
   <div class="header-left">
-    <button class="mobile-toggle" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
+    <button class="mobile-toggle" data-action="toggle-sidebar"><i class="fas fa-bars"></i></button>
     <div class="header-logo">
       <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
         <defs><linearGradient id="hg" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -47,7 +47,7 @@
     <div class="sidebar-env">
       <form method="post" action="{{ url_for('set_profile') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <select name="team" onchange="this.form.submit()">
+        <select name="team">
           {% for key, t in themes.items() %}
           <option value="{{ key }}" {% if key == team %}selected{% endif %}>{{ t.name }}</option>
           {% endfor %}
@@ -57,10 +57,10 @@
 
     <nav class="sidebar-nav">
       <div class="section-label">Categories</div>
-      <button class="nav-item active" data-cat="__all__"><i class="fas fa-th-large"></i> All tools</button>
-      <button class="nav-item" data-cat="__installed__"><i class="fas fa-check-circle"></i> Installed tools</button>
+      <button class="nav-item active" data-action="filter" data-cat="__all__"><i class="fas fa-th-large"></i> All tools</button>
+      <button class="nav-item" data-action="filter" data-cat="__installed__"><i class="fas fa-check-circle"></i> Installed tools</button>
       {% for c in categories %}
-      <button class="nav-item" data-cat="{{ c }}"><i class="fas fa-folder"></i> {{ c }}</button>
+      <button class="nav-item" data-action="filter" data-cat="{{ c }}"><i class="fas fa-folder"></i> {{ c }}</button>
       {% endfor %}
 
       <div class="section-label">Platform</div>
@@ -79,7 +79,7 @@
     <div class="section-title">
       <div class="runner">
         <input id="custom-cmd" placeholder="Lab-only command runner (audited)…" style="flex:1;">
-        <button onclick="runCustom()"><i class="fas fa-terminal"></i> Run</button>
+        <button data-action="run-custom"><i class="fas fa-terminal"></i> Run</button>
       </div>
     </div>
 
@@ -90,7 +90,7 @@
         <div class="stat-value">{{ tool_count }}</div>
         <div class="stat-label">Catalog Tools</div>
       </div>
-      <div class="stat-card" id="installed-stat" style="cursor:pointer;" title="Show installed tools">
+      <div class="stat-card" id="installed-stat" data-action="filter-installed" style="cursor:pointer;" title="Show installed tools">
         <div class="stat-icon green"><i class="fas fa-check-circle"></i></div>
         <div class="stat-value">{{ installed_count }}</div>
         <div class="stat-label">Installed</div>
@@ -123,7 +123,7 @@
       </div></div>
       <div class="ai-input-container">
         <input class="ai-input" id="ai-input" placeholder="e.g. explain phishing triage">
-        <button class="ai-send-btn" onclick="askAi()"><i class="fas fa-paper-plane"></i> Ask</button>
+        <button class="ai-send-btn" data-action="ask-ai"><i class="fas fa-paper-plane"></i> Ask</button>
       </div>
     </div>
 
@@ -131,7 +131,7 @@
     <div class="section-title"><h3><i class="fas fa-tools"></i> Cybersecurity Tools</h3></div>
     <div class="tools-grid" id="tool-grid">
       {% for t in tools %}
-      <div class="tool-card" data-cat="{{ t.category }}" data-installed="{{ '1' if t.installed else '0' }}">
+      <div class="tool-card" data-cat="{{ t.category }}" data-installed="{{ '1' if t.installed else '0' }}" data-slug="{{ t.slug }}" data-name="{{ t.name }}">
         <div class="tool-header">
           <div><div class="tool-name">{{ t.name }}</div></div>
           <div class="tool-logo"><i class="fas fa-shield-halved"></i></div>
@@ -144,9 +144,9 @@
         </div>
         <div class="tool-desc">{{ t.beginner_note }}</div>
         <div class="tool-actions">
-          <button class="tool-btn install" onclick="openTerm('{{ t.slug }}','install')">Install</button>
-          <button class="tool-btn run" onclick="askRun('{{ t.slug }}','{{ t.name }}')">Run</button>
-          <button class="tool-btn docs" onclick="openDocs('{{ t.slug }}')">Docs</button>
+          <button class="tool-btn install" data-action="tool-install">Install</button>
+          <button class="tool-btn run" data-action="tool-run">Run</button>
+          <button class="tool-btn docs" data-action="tool-docs">Docs</button>
         </div>
       </div>
       {% endfor %}
@@ -158,10 +158,10 @@
       <div class="modal">
         <h3 id="run-modal-title">Run tool</h3>
         <p>Where would you like to run this tool?</p>
-        <button class="tool-btn run" style="width:100%;" onclick="runChoice('browser')">🌐 In-browser terminal (new tab)</button>
-        <button class="ghost" style="width:100%;" onclick="runChoice('native')">🖥️ Native Kali terminal window</button>
-        <button class="ghost" style="width:100%;" onclick="runChoice('docs')">📖 Open docs &amp; usage instead</button>
-        <button class="ghost" style="width:100%;" onclick="closeRun()">Cancel</button>
+        <button class="tool-btn run" style="width:100%;" data-action="run-choice" data-where="browser">🌐 In-browser terminal (new tab)</button>
+        <button class="ghost" style="width:100%;" data-action="run-choice" data-where="native">🖥️ Native Kali terminal window</button>
+        <button class="ghost" style="width:100%;" data-action="run-choice" data-where="docs">📖 Open docs &amp; usage instead</button>
+        <button class="ghost" style="width:100%;" data-action="close-run">Cancel</button>
         <div id="run-modal-msg" style="margin-top:10px; font-size:13px;"></div>
       </div>
     </div>
@@ -186,100 +186,5 @@
 </div>
 {% endblock %}
 {% block scripts %}
-<script>
-  function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
-
-  // Category filtering (real categories from the sidebar).
-  function applyFilter(cat) {
-    document.querySelectorAll('.sidebar .nav-item[data-cat]').forEach(b =>
-      b.classList.toggle('active', b.dataset.cat === cat));
-    let shown = 0;
-    document.querySelectorAll('#tool-grid .tool-card').forEach(card => {
-      let visible;
-      if (cat === '__all__') visible = true;
-      else if (cat === '__installed__') visible = card.dataset.installed === '1';
-      else visible = card.dataset.cat === cat;
-      card.style.display = visible ? '' : 'none';
-      if (visible) shown++;
-    });
-    const empty = document.getElementById('tool-empty');
-    if (empty) empty.style.display = (shown === 0) ? '' : 'none';
-  }
-  document.querySelectorAll('.sidebar .nav-item[data-cat]').forEach(btn => {
-    btn.addEventListener('click', () => applyFilter(btn.dataset.cat));
-  });
-  // Clicking the "Installed" stat card jumps to the installed-tools filter.
-  const installedStat = document.getElementById('installed-stat');
-  if (installedStat) {
-    installedStat.addEventListener('click', () => {
-      applyFilter('__installed__');
-      document.getElementById('tool-grid').scrollIntoView({behavior: 'smooth', block: 'start'});
-    });
-  }
-
-  function openTab(url) {
-    const win = window.open(url, '_blank');
-    if (!win || win.closed || typeof win.closed === 'undefined') window.location.href = url;
-  }
-  function openTerm(slug, action) { openTab(`/terminal?tool=${encodeURIComponent(slug)}&action=${action}`); }
-  function openDocs(slug) { openTab(`/usage?tool=${encodeURIComponent(slug)}`); }
-
-  let _runSlug = null;
-  function askRun(slug, name) {
-    _runSlug = slug;
-    document.getElementById('run-modal-title').textContent = 'Run ' + name;
-    document.getElementById('run-modal-msg').textContent = '';
-    document.getElementById('run-modal').style.display = 'flex';
-  }
-  function closeRun() { document.getElementById('run-modal').style.display = 'none'; _runSlug = null; }
-  async function runChoice(where) {
-    if (!_runSlug) return;
-    if (where === 'browser') { openTab(`/terminal?tool=${encodeURIComponent(_runSlug)}&action=run`); closeRun(); }
-    else if (where === 'docs') { openDocs(_runSlug); closeRun(); }
-    else if (where === 'native') {
-      const msg = document.getElementById('run-modal-msg');
-      msg.textContent = 'Launching native Kali terminal…';
-      try {
-        const r = await fetch('/api/run-target', { method: 'POST', headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({tool: _runSlug})});
-        const data = await r.json();
-        if (data.launched) {
-          msg.innerHTML = '<span style="color:var(--green-primary)">' + (data.detail || 'Launched.') + '</span>';
-          setTimeout(closeRun, 1200);
-        } else {
-          msg.innerHTML = '<span style="color:var(--orange-primary)">' + (data.error || data.detail || 'Could not open a native terminal.') + ' Opening in-browser terminal…</span>';
-          setTimeout(() => { openTab(`/terminal?tool=${encodeURIComponent(_runSlug)}&action=run`); closeRun(); }, 1600);
-        }
-      } catch (e) { msg.innerHTML = '<span style="color:var(--red-primary)">Request failed.</span>'; }
-    }
-  }
-  function runCustom() {
-    const cmd = document.getElementById('custom-cmd').value.trim();
-    if (!cmd) return;
-    openTab(`/terminal?cmd=${encodeURIComponent(cmd)}`);
-  }
-
-  async function refreshMetrics() {
-    try {
-      const r = await fetch('/api/metrics'); const m = await r.json();
-      document.getElementById('m-cpu').textContent = m.available ? m.cpu_percent : 'n/a';
-      document.getElementById('m-mem').textContent = m.available ? m.memory_percent : 'n/a';
-      document.getElementById('m-disk').textContent = m.available ? m.disk_percent : 'n/a';
-    } catch (e) {}
-  }
-  refreshMetrics(); setInterval(refreshMetrics, 5000);
-
-  async function askAi() {
-    const input = document.getElementById('ai-input');
-    const log = document.getElementById('ai-log');
-    const q = input.value.trim(); if (!q) return;
-    log.innerHTML += `<div class="ai-message user">${q}</div>`;
-    input.value = '';
-    const r = await fetch('/api/ai', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({prompt: q})});
-    const data = await r.json();
-    log.innerHTML += `<div class="ai-message bot">${data.reply}</div>`;
-    log.scrollTop = log.scrollHeight;
-  }
-  document.getElementById('ai-input').addEventListener('keydown', e => { if (e.key === 'Enter') askAi(); });
-</script>
+<script src="{{ url_for('static', filename='dashboard.js') }}?v={{ asset_v }}"></script>
 {% endblock %}
