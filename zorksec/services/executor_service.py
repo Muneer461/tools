@@ -259,7 +259,10 @@ def build_run_command(tool: ToolRegistry, extra_args: str = "") -> Command:
 
     # Fall back to launching the detected binary.
     if not binary:
-        raise ExecutionError(f"Tool '{tool.slug}' has no run command or binary defined.")
+        raise ExecutionError(
+            f"{tool.name} has no command-line launcher - it is a service, GUI, "
+            f"or library. Use the Docs button to see how to start it"
+            + (f" ({tool.docs_url})." if getattr(tool, 'docs_url', '') else "."))
     return Command([binary], f"run {binary}", cwd=cwd)
 
 

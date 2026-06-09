@@ -36,6 +36,7 @@ class ToolRow:
     installed: bool
     health_status: str
     health_score: int
+    runnable: bool = True
 
 
 class RegistryService:
@@ -108,6 +109,13 @@ class RegistryService:
 
     def snapshot(self, team: str = "both") -> list[ToolRow]:
         """Return flat ToolRow snapshots (safe to use after the session closes)."""
+        # A tool is "runnable" from the browser terminal only if the catalog
+        # gives it a run command OR a detectable binary. Services / GUIs /
+        # libraries (e.g. MISP, BloodHound, Impacket) have neither, so the UI
+        # routes their Run button to Docs instead of a dead-end error.
+        runnable_slugs = {
+            d.slug for d in CATALOG if (d.run_command or d.check_binary)
+        }
         rows: list[ToolRow] = []
         for tool in self.tools.list_by_team(team):
             status = self.tools.ensure_status(tool)
@@ -127,6 +135,7 @@ class RegistryService:
                     installed=bool(status and status.installed),
                     health_status=health.status if health else "unknown",
                     health_score=health.score if health else 0,
+                    runnable=tool.slug in runnable_slugs,
                 )
             )
         return rows

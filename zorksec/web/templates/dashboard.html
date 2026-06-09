@@ -131,7 +131,7 @@
     <div class="section-title"><h3><i class="fas fa-tools"></i> Cybersecurity Tools</h3></div>
     <div class="tools-grid" id="tool-grid">
       {% for t in tools %}
-      <div class="tool-card" data-cat="{{ t.category }}" data-installed="{{ '1' if t.installed else '0' }}" data-slug="{{ t.slug }}" data-name="{{ t.name }}">
+      <div class="tool-card" data-cat="{{ t.category }}" data-installed="{{ '1' if t.installed else '0' }}" data-slug="{{ t.slug }}" data-name="{{ t.name }}" data-runnable="{{ '1' if t.runnable else '0' }}">
         <div class="tool-header">
           <div><div class="tool-name">{{ t.name }}</div></div>
           <div class="tool-logo"><i class="fas fa-shield-halved"></i></div>

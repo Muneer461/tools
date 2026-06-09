@@ -600,3 +600,38 @@ def test_default_password_rejected_after_change(client):
     fresh.post("/login", data={"username": "zorksec", "password": "zorksec"})
     # Default creds no longer grant access.
     assert fresh.get("/").status_code == 302
+
+
+
+# ---------------------------------------------------------------------------
+# Run UX for non-CLI tools (services/GUIs/libraries) must not dead-end
+# ---------------------------------------------------------------------------
+def test_dashboard_marks_non_runnable_tools(client):
+    _login_full(client)
+    body = client.get("/").get_data(as_text=True)
+    # Runnable CLI tool exposes data-runnable="1"; a service/library exposes "0".
+    assert 'data-slug="nmap"' in body and 'data-runnable="1"' in body
+    # At least one non-runnable tool is flagged so the UI can route it to Docs.
+    assert 'data-runnable="0"' in body
+
+
+def test_non_runnable_tool_run_gives_actionable_message():
+    """build_run_command for a no-CLI tool returns guidance, not a cryptic error."""
+    from zorksec.config import get_settings
+    from zorksec.db.session import init_db, session_scope
+    from zorksec.repositories.tool_repository import ToolRepository
+    from zorksec.services.executor_service import ExecutionError, build_run_command
+    from zorksec.services.registry_service import RegistryService
+
+    s = get_settings()
+    init_db(s)
+    with session_scope(s) as db:
+        RegistryService(db).seed_catalog()
+        tool = ToolRepository(db).get_by_slug("bloodhound")
+        try:
+            build_run_command(tool)
+            raise AssertionError("expected ExecutionError for a non-CLI tool")
+        except ExecutionError as exc:
+            msg = str(exc).lower()
+            assert "docs" in msg  # points the user to documentation
+            assert "no command-line launcher" in msg

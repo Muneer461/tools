@@ -46,10 +46,19 @@
 
   // ---- run modal ----------------------------------------------------------
   var runSlug = null;
-  function askRun(slug, name) {
+  function askRun(slug, name, runnable) {
     runSlug = slug;
     document.getElementById("run-modal-title").textContent = "Run " + (name || slug);
-    document.getElementById("run-modal-msg").textContent = "";
+    var msg = document.getElementById("run-modal-msg");
+    if (runnable === false) {
+      // Services / GUIs / libraries have no CLI launcher - steer to Docs so the
+      // Run button is never a confusing dead-end.
+      msg.innerHTML = '<span style="color:var(--orange-primary)">' +
+        (name || slug) + " is a service, GUI, or library with no direct " +
+        "command-line launcher. Open <b>Docs</b> for how to start it.</span>";
+    } else {
+      msg.textContent = "";
+    }
     document.getElementById("run-modal").style.display = "flex";
   }
   function closeRun() {
@@ -149,7 +158,7 @@
           .scrollIntoView({ behavior: "smooth", block: "start" });
         break;
       case "tool-install": openTerm(slug, "install"); break;
-      case "tool-run": askRun(slug, name); break;
+      case "tool-run": askRun(slug, name, (card && card.dataset.runnable) !== "0"); break;
       case "tool-docs": openDocs(slug); break;
       case "run-choice": runChoice(el.dataset.where); break;
       case "close-run": closeRun(); break;

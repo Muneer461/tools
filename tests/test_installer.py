@@ -109,3 +109,29 @@ def test_frontend_assets_are_vendored_offline():
         assert "cdn.jsdelivr.net" not in text, f"{tpl.name} still uses jsdelivr CDN"
         assert "cdn.socket.io" not in text, f"{tpl.name} still uses socket.io CDN"
         assert "cdnjs.cloudflare.com" not in text, f"{tpl.name} still uses cdnjs CDN"
+        # Fully offline: no external HTTP(S) asset references at all (fonts incl.).
+        assert "https://" not in text, (
+            f"{tpl.name} references an external URL (offline mode requires all "
+            f"assets vendored locally)")
+
+
+def test_fonts_vendored_offline():
+    """Web fonts are served locally (no Google Fonts CDN) for air-gapped use."""
+    fonts_css = ROOT / "zorksec" / "web" / "static" / "vendor" / "fonts" / "fonts.css"
+    assert fonts_css.exists(), "vendored fonts.css missing"
+    body = fonts_css.read_text(encoding="utf-8")
+    assert "gstatic" not in body and "googleapis" not in body
+    # The @font-face src must point at local woff2 files.
+    assert ".woff2" in body
+
+
+def test_no_external_refs_in_own_stylesheets():
+    """Our own CSS must not @import or url() any external host (offline mode).
+    Excludes vendored third-party minified libs, which may contain their own
+    homepage/sourcemap comments (not runtime loads)."""
+    static = ROOT / "zorksec" / "web" / "static"
+    own_css = [static / "zorksec.css", static / "vendor" / "fonts" / "fonts.css"]
+    for css in own_css:
+        text = css.read_text(encoding="utf-8")
+        assert "https://" not in text, f"{css.name} references an external URL"
+        assert "gstatic" not in text and "googleapis" not in text

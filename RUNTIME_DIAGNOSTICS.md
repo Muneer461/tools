@@ -176,3 +176,54 @@ icons, the dashboard appeared inert. With assets vendored locally, the new tab
 now boots a working terminal and the icons render — resolving the perceived
 "dead button" behaviour. Cache-busting ensures an upgraded install never keeps
 serving a stale cached page.
+
+
+
+---
+
+## Follow-up audit (round 2) — execution chain & remaining gaps
+
+### Tool-by-tool execution chain (verified live)
+
+Command building from the trusted catalog + live Socket.IO output:
+
+```
+nmap        install: sudo apt-get install -y nmap        run: nmap --version
+tshark      install: sudo apt-get install -y tshark      run: tshark --version
+nikto       install: sudo apt-get install -y nikto       run: nikto -Version
+gobuster    install: sudo apt-get install -y gobuster    run: gobuster version
+sqlmap      install: sudo apt-get install -y sqlmap       run: sqlmap --version
+bloodhound  install: git clone --depth 1 .../BloodHound   run: (no CLI - see below)
+
+SOCKET.IO terminal: nmap install -> output frames=1 (banner + command)
+                    nmap run     -> output frames=1 (banner + command)
+DOCS (/usage) for all named tools -> 200
+```
+Note: `wireshark` is catalogued as **`tshark`** (the CLI component) — there is
+no separate `wireshark` slug.
+
+### New issue found & fixed — Run dead-end for non-CLI tools
+
+`build_run_command` raised `Tool 'X' has no run command or binary defined.` for
+**19 of 101** tools that are services / GUIs / libraries (TheHive, Cortex, GRR,
+CyberChef, MISP, OpenCTI, Yeti, IntelOwl, BeEF, Empire, BloodHound, Impacket,
+Arkime, pySigma, Atomic Red Team, Caldera, VECTR, OSSEM, ATT&CK Navigator).
+Clicking **Run** on these ended in a cryptic terminal error.
+
+- File/function: `zorksec/services/executor_service.py::build_run_command`
+  (final `if not binary:` branch).
+- Fix: the catalog snapshot now carries a `runnable` flag (true when a tool has
+  a `run_command` or `check_binary`); cards render `data-runnable`. The
+  dashboard Run modal detects non-runnable tools and **guides the user to Docs**
+  instead of a dead-end. The terminal-side error message is now actionable and
+  includes the docs URL.
+- Tests: `test_dashboard_marks_non_runnable_tools`,
+  `test_non_runnable_tool_run_gives_actionable_message`.
+
+### Offline completion — web fonts vendored
+
+The last external dependency (`login.html` Google Fonts) was removed: Inter,
+JetBrains Mono and Orbitron are vendored as 14 local woff2 files under
+`vendor/fonts/` with a local `fonts.css`, loaded site-wide via `base.html`.
+Templates now contain **zero `https://` references**. Locked in by
+`test_fonts_vendored_offline` and the strengthened offline template sweep.

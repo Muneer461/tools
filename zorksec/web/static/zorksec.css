@@ -2,7 +2,8 @@
    ZorkSec - Cybersecurity Analysis Platform L1 (professional purple/cyan theme)
    Applied across login, dashboard, diagnostics, Kali, help, and usage pages.
    ========================================================================== */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&display=swap');
+/* Fonts are vendored locally (vendor/fonts/fonts.css, loaded by base.html) so
+   ZorkSec works fully offline - no Google Fonts CDN dependency. */
 
 :root {
   --bg-primary: #0a0a1a;
