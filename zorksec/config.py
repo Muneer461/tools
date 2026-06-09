@@ -175,10 +175,19 @@ class Settings:
         Wildcards are deliberately *not* used. ``ZORKSEC_ALLOWED_ORIGINS`` (a
         comma-separated list) extends the defaults, which cover localhost on the
         configured web port plus any common loopback hostnames/ports.
+
+        The port range is generous because the dashboard auto-selects a free
+        port when its default is busy; if the bound port were missing here the
+        in-browser terminal's WebSocket would be rejected and appear to "hang"
+        on "connecting...". ``run_web`` also injects the exact bound origin via
+        ``ZORKSEC_ALLOWED_ORIGINS`` as a belt-and-braces guarantee.
         """
         origins: list[str] = []
         hosts = ["127.0.0.1", "localhost", "[::1]"]
-        ports = {self.web_port, 8765, 8080, 8000, 5000}
+        # Common dev/app ports plus the whole 8000-8100 auto-select range used
+        # by ``_find_free_port`` so a port switch never breaks the terminal.
+        ports = {self.web_port, 8765, 8080, 8000, 5000, 3000}
+        ports.update(range(8000, 8101))
         for host in hosts:
             for port in sorted(ports):
                 origins.append(f"http://{host}:{port}")

@@ -223,22 +223,41 @@ def build_install_command(method: str, target: str, slug: str) -> Command | None
     raise ExecutionError(f"Unknown install method '{method}' for tool '{slug}'.")
 
 
-def build_run_command(tool: ToolRegistry) -> Command:
-    """Build the run command for a tool (catalog-defined; trusted)."""
+def build_run_command(tool: ToolRegistry, extra_args: str = "") -> Command:
+    """Build the run command for a tool (catalog-defined; trusted).
+
+    ``extra_args`` lets the user supply real arguments interactively (e.g.
+    ``-sV 127.0.0.1`` for nmap). When provided, we run the tool's binary with
+    those arguments instead of the catalog's default ``run_command`` (which is
+    usually just a ``--version`` smoke check). The args are appended to a known
+    catalog binary, so this is not an arbitrary-command path.
+    """
     # GitHub tools run from their cloned directory.
     cwd: str | None = None
     if tool.install_method == "github" and tool.install_target:
         repo_dir = soc_tools_dir() / _repo_name(tool.install_target)
         cwd = str(repo_dir)
 
+    from zorksec.registry.catalog import CATALOG
+
+    binary = next((d.check_binary for d in CATALOG if d.slug == tool.slug), "")
+
+    if extra_args.strip():
+        # Prefer the detected binary; fall back to the first token of the
+        # catalog run_command if no check_binary is defined.
+        base = binary or (tool.run_command.split()[0] if tool.run_command else "")
+        if not base:
+            raise ExecutionError(
+                f"Tool '{tool.slug}' has no binary to run with arguments.")
+        line = f"{base} {extra_args.strip()}"
+        return Command([line], f"run {tool.slug} {extra_args.strip()}",
+                       shell=True, cwd=cwd)
+
     if tool.run_command:
         # run_command is a trusted, catalog-authored shell string.
         return Command([tool.run_command], f"run {tool.slug}", shell=True, cwd=cwd)
 
     # Fall back to launching the detected binary.
-    from zorksec.registry.catalog import CATALOG
-
-    binary = next((d.check_binary for d in CATALOG if d.slug == tool.slug), "")
     if not binary:
         raise ExecutionError(f"Tool '{tool.slug}' has no run command or binary defined.")
     return Command([binary], f"run {binary}", cwd=cwd)
@@ -437,11 +456,12 @@ class ExecutorService:
         logger.info("Verify '%s': %s", slug, result.summary())
         return result
 
-    def run(self, slug: str, on_line: Callable[[str], None] | None = None) -> int:
+    def run(self, slug: str, on_line: Callable[[str], None] | None = None,
+            extra_args: str = "") -> int:
         tool = self.tools.get_by_slug(slug)
         if tool is None:
             raise ExecutionError(f"Unknown tool '{slug}'.")
-        command = build_run_command(tool)
+        command = build_run_command(tool, extra_args=extra_args)
         if on_line:
             on_line(f"[zorksec] $ {command.display()}")
         code = stream_command(command, on_line)

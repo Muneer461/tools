@@ -18,13 +18,21 @@
   #term { height: calc(100vh - 46px); padding: 6px;
           animation: zs-pop .4s ease both; }
   #status { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
+  /* Visible, actionable error banner so the terminal never just "loads forever". */
+  #fatal {
+    display:none; margin: 14px; padding: 14px 16px; border-radius: 10px;
+    background: #2a0f0f; color: #ffd9d9; font-family: monospace; font-size: 13px;
+    border: 1px solid #7a2a2a; line-height: 1.5;
+  }
+  #fatal a { color: #8be9fd; }
 </style>
 {% endblock %}
 {% block body %}
 <div class="term-head">
   <span class="brand">ZorkSec <span class="dot">&#9679;</span> {{ title }}</span>
-  <span id="status"><span class="spinner"></span> connecting…</span>
+  <span id="status"><span class="spinner"></span> loading terminal…</span>
 </div>
+<div id="fatal"></div>
 <div id="term"></div>
 {% endblock %}
 {% block scripts %}
@@ -32,39 +40,98 @@
 <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script>
-  const term = new Terminal({ cursorBlink: true, fontSize: 14,
-    theme: { background: '#000000', foreground: '#d6ffe6' } });
-  const fit = new FitAddon.FitAddon();
-  term.loadAddon(fit);
-  term.open(document.getElementById('term'));
-  fit.fit();
+  // ---- helpers ---------------------------------------------------------
+  function setStatus(html) { document.getElementById('status').innerHTML = html; }
+  function fatal(html) {
+    const box = document.getElementById('fatal');
+    box.style.display = 'block';
+    box.innerHTML = html;
+    setStatus('<span style="color:var(--danger)">&#9679;</span> error');
+  }
 
-  const socket = io();
-  const payload = {
-    tool: {{ slug | tojson }},
-    action: {{ action | tojson }},
-    cmd: {{ custom | tojson }}
-  };
+  // ---- guard: required libraries must have loaded ----------------------
+  // If the CDN is blocked (offline / proxy / DNS), these globals are undefined.
+  // Instead of hanging on "loading…", tell the user exactly what to do.
+  const missing = [];
+  if (typeof Terminal === 'undefined') missing.push('xterm.js');
+  if (typeof FitAddon === 'undefined') missing.push('xterm-addon-fit');
+  if (typeof io === 'undefined') missing.push('socket.io');
+  if (missing.length) {
+    fatal(
+      '<b>Terminal libraries failed to load:</b> ' + missing.join(', ') + '.<br>' +
+      'This usually means the browser could not reach the internet/CDN.<br><br>' +
+      '<b>Fixes:</b><br>' +
+      '&bull; Connect this machine to the internet and reload, or<br>' +
+      '&bull; Use the <b>Native Kali terminal</b> option from the dashboard ' +
+      'Run menu instead (works fully offline), or<br>' +
+      '&bull; Run the tool directly in your own terminal.'
+    );
+  } else {
+    bootTerminal();
+  }
 
-  socket.on('connect', () => {
-    document.getElementById('status').innerHTML = '<span style="color:var(--ok)">&#9679;</span> connected';
-    socket.emit('resize', { rows: term.rows, cols: term.cols });
-    socket.emit('start', payload);
-    term.focus();
-  });
-  socket.on('output', (msg) => term.write(msg.data));
-  socket.on('exit', (msg) => {
-    document.getElementById('status').innerHTML =
-      '<span style="color:var(--warn)">&#9679;</span> exited (' + msg.code + ')';
-  });
-  socket.on('disconnect', () =>
-    document.getElementById('status').innerHTML =
-      '<span style="color:var(--danger)">&#9679;</span> disconnected');
-
-  term.onData(data => socket.emit('input', { data }));
-  addEventListener('resize', () => {
+  function bootTerminal() {
+    const term = new Terminal({ cursorBlink: true, fontSize: 14,
+      theme: { background: '#000000', foreground: '#d6ffe6' } });
+    const fit = new FitAddon.FitAddon();
+    term.loadAddon(fit);
+    term.open(document.getElementById('term'));
     fit.fit();
-    socket.emit('resize', { rows: term.rows, cols: term.cols });
-  });
+    setStatus('<span class="spinner"></span> connecting…');
+
+    const payload = {
+      tool: {{ slug | tojson }},
+      action: {{ action | tojson }},
+      cmd: {{ custom | tojson }}
+    };
+
+    // Connect with explicit transports + an upgrade so blocked WebSockets fall
+    // back to long-polling instead of silently never connecting.
+    const socket = io({ transports: ['polling', 'websocket'], timeout: 8000 });
+
+    // If we never connect within ~10s, surface a clear, actionable message
+    // rather than spinning forever.
+    let connected = false;
+    const watchdog = setTimeout(() => {
+      if (!connected) {
+        fatal(
+          '<b>Could not connect to the ZorkSec server.</b><br>' +
+          'The page loaded but the realtime connection was refused or timed out.<br><br>' +
+          '<b>Common causes:</b><br>' +
+          '&bull; The browser origin is not allow-listed (CORS). Restart ' +
+          '<code>zorksec --web</code> after updating, or<br>' +
+          '&bull; A proxy/extension is blocking WebSockets &amp; polling.<br><br>' +
+          'You can also use the <b>Native Kali terminal</b> option from the dashboard.'
+        );
+        try { socket.close(); } catch (e) {}
+      }
+    }, 10000);
+
+    socket.on('connect', () => {
+      connected = true;
+      clearTimeout(watchdog);
+      setStatus('<span style="color:var(--ok)">&#9679;</span> connected');
+      socket.emit('resize', { rows: term.rows, cols: term.cols });
+      socket.emit('start', payload);
+      term.focus();
+    });
+    socket.on('connect_error', (err) => {
+      // Don't clear the watchdog: it gives the final actionable message.
+      setStatus('<span style="color:var(--warn)">&#9679;</span> connecting… (' +
+                (err && err.message ? err.message : 'retrying') + ')');
+    });
+    socket.on('output', (msg) => term.write(msg.data));
+    socket.on('exit', (msg) => {
+      setStatus('<span style="color:var(--warn)">&#9679;</span> exited (' + msg.code + ')');
+    });
+    socket.on('disconnect', () =>
+      setStatus('<span style="color:var(--danger)">&#9679;</span> disconnected'));
+
+    term.onData(data => socket.emit('input', { data }));
+    addEventListener('resize', () => {
+      fit.fit();
+      socket.emit('resize', { rows: term.rows, cols: term.cols });
+    });
+  }
 </script>
 {% endblock %}

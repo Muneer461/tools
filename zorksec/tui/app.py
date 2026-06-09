@@ -201,12 +201,21 @@ class TuiApp:
 
     def _execute(self, row: ToolRow, install: bool) -> None:
         verb = "Installing" if install else "Running"
+        extra_args = ""
+        if not install:
+            if row.requires_isolation:
+                confirm = self._ask("[red]This tool should run in isolation. Continue? (y/N)[/red]")
+                if confirm.lower() not in ("y", "yes"):
+                    self.console.print("[yellow]Cancelled.[/yellow]")
+                    return
+            # Let the user pass real arguments (e.g. nmap '-sV 127.0.0.1').
+            # The default catalog run command is usually just a --version check,
+            # so prompting here makes "Run" actually useful. Enter = default.
+            self.console.print(
+                "[cyan]Enter arguments for this tool (e.g. for nmap: -sV 127.0.0.1),\n"
+                "or press Enter to run the default check.[/cyan]")
+            extra_args = self._ask(f"{row.name} args").strip()
         self.console.print(f"[bold]{verb} {row.name}...[/bold]")
-        if not install and row.requires_isolation:
-            confirm = self._ask("[red]This tool should run in isolation. Continue? (y/N)[/red]")
-            if confirm.lower() not in ("y", "yes"):
-                self.console.print("[yellow]Cancelled.[/yellow]")
-                return
         with session_scope(self.settings) as session:
             executor = ExecutorService(session)
 
@@ -217,7 +226,8 @@ class TuiApp:
                 if install:
                     code = executor.install(row.slug, on_line=line_printer)
                 else:
-                    code = executor.run(row.slug, on_line=line_printer)
+                    code = executor.run(row.slug, on_line=line_printer,
+                                        extra_args=extra_args)
             except Exception as exc:  # surface, don't crash the TUI
                 self.console.print(f"[red]Error: {exc}[/red]")
                 return

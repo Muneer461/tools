@@ -1,106 +1,183 @@
 {% extends "base.html" %}
-{% block title %}ZorkSec Dashboard{% endblock %}
+{% block title %}ZorkSec - Cybersecurity Analysis Platform L1{% endblock %}
+{% block head %}
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+{% endblock %}
 {% block body %}
-<div class="layout">
-  <aside class="sidebar">
-    <h1>ZorkSec</h1>
-    <div class="sub">{{ theme.name }} &middot; {{ username }}</div>
-    <form method="post" action="{{ url_for('set_profile') }}" style="margin-bottom:14px;">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <select name="team" onchange="this.form.submit()" style="width:100%;">
-        {% for key, t in themes.items() %}
-        <option value="{{ key }}" {% if key == team %}selected{% endif %}>{{ t.name }}</option>
-        {% endfor %}
-      </select>
-    </form>
-    <button class="cat active" data-cat="__all__">All tools</button>
-    {% for c in categories %}
-    <button class="cat" data-cat="{{ c }}">{{ c }}</button>
-    {% endfor %}
-    <hr style="border-color: rgba(255,255,255,0.08); margin: 14px 0;">
-    <a class="cat" href="{{ url_for('lab') }}">🧪 Build My Lab</a>
-    <a class="cat" href="{{ url_for('diagnostics') }}">🩺 Diagnostic Center</a>
-    <a class="cat" href="{{ url_for('security_question') }}">🔑 Recovery question</a>
-    <a class="cat" href="{{ url_for('logout') }}">Logout</a>
+<!-- ===== Header ===== -->
+<header class="header">
+  <div class="header-left">
+    <button class="mobile-toggle" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
+    <div class="header-logo">
+      <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="hg" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style="stop-color:#805aff"/><stop offset="100%" style="stop-color:#00d4ff"/>
+        </linearGradient></defs>
+        <path d="M20 3L5 11V22c0 10 6 16 15 18 9-2 15-8 15-18V11L20 3z" fill="url(#hg)" opacity="0.2" stroke="url(#hg)" stroke-width="1.5"/>
+        <text x="20" y="26" text-anchor="middle" fill="white" font-family="Orbitron, sans-serif" font-size="14" font-weight="900">Z</text>
+      </svg>
+      <h2>ZORKSEC</h2>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="header-status"><div class="dot"></div> SYSTEM ONLINE</div>
+    <div class="header-actions">
+      <a class="header-btn" href="{{ url_for('help_center') }}" title="Help Center"><i class="fas fa-comment-dots"></i></a>
+      <a class="header-btn" href="{{ url_for('diagnostics') }}" title="Diagnostic Center"><i class="fas fa-stethoscope"></i></a>
+      <a class="header-btn" href="{{ url_for('kali_diagnostics') }}" title="Kali Diagnostics"><i class="fas fa-dragon"></i></a>
+      <div class="user-avatar">
+        <div class="avatar-placeholder">{{ username[0]|upper }}</div>
+        <div>
+          <div class="user-name">{{ username }}</div>
+          <div class="user-role">{{ theme.name }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="app-shell">
+  <!-- ===== Sidebar ===== -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-profile">
+      <div class="profile-avatar">{{ username[0]|upper }}</div>
+      <h4>{{ username }}</h4>
+      <span><i class="fas fa-shield-halved"></i> Security Analyst L1</span>
+    </div>
+
+    <div class="sidebar-env">
+      <form method="post" action="{{ url_for('set_profile') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <select name="team" onchange="this.form.submit()">
+          {% for key, t in themes.items() %}
+          <option value="{{ key }}" {% if key == team %}selected{% endif %}>{{ t.name }}</option>
+          {% endfor %}
+        </select>
+      </form>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="section-label">Categories</div>
+      <button class="nav-item active" data-cat="__all__"><i class="fas fa-th-large"></i> All tools</button>
+      {% for c in categories %}
+      <button class="nav-item" data-cat="{{ c }}"><i class="fas fa-folder"></i> {{ c }}</button>
+      {% endfor %}
+
+      <div class="section-label">Platform</div>
+      <a class="nav-item" href="{{ url_for('lab') }}"><i class="fas fa-flask"></i> Build My Lab</a>
+      <a class="nav-item" href="{{ url_for('diagnostics') }}"><i class="fas fa-stethoscope"></i> Diagnostic Center</a>
+      <a class="nav-item" href="{{ url_for('kali_diagnostics') }}"><i class="fas fa-dragon"></i> Kali Diagnostics</a>
+      <a class="nav-item" href="{{ url_for('help_center') }}"><i class="fas fa-comment-dots"></i> Help Center</a>
+      <a class="nav-item" href="{{ url_for('security_question') }}"><i class="fas fa-key"></i> Recovery question</a>
+      <a class="nav-item logout" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Logout</a>
+    </nav>
   </aside>
 
-  <main class="main">
-    <div class="topbar">
+  <!-- ===== Main ===== -->
+  <main class="main-content">
+    <!-- Lab-only command runner -->
+    <div class="section-title">
       <div class="runner">
         <input id="custom-cmd" placeholder="Lab-only command runner (audited)…" style="flex:1;">
-        <button onclick="runCustom()">Run</button>
-      </div>
-      <div>
-        <span class="badge">{{ installed_count }}/{{ tool_count }} installed</span>
+        <button onclick="runCustom()"><i class="fas fa-terminal"></i> Run</button>
       </div>
     </div>
 
-    <div class="cards" id="metrics">
-      <div class="metric"><div class="v" id="m-cpu">–</div><div class="l">CPU %</div></div>
-      <div class="metric"><div class="v" id="m-mem">–</div><div class="l">Memory %</div></div>
-      <div class="metric"><div class="v" id="m-disk">–</div><div class="l">Disk %</div></div>
-      <div class="metric"><div class="v">{{ tool_count }}</div><div class="l">Catalog tools</div></div>
+    <!-- Stats (real data) -->
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-icon purple"><i class="fas fa-shield-virus"></i></div>
+        <div class="stat-value">{{ tool_count }}</div>
+        <div class="stat-label">Catalog Tools</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon green"><i class="fas fa-check-circle"></i></div>
+        <div class="stat-value">{{ installed_count }}</div>
+        <div class="stat-label">Installed</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon cyan"><i class="fas fa-microchip"></i></div>
+        <div class="stat-value" id="m-cpu">–</div>
+        <div class="stat-label">CPU %</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon orange"><i class="fas fa-memory"></i></div>
+        <div class="stat-value" id="m-mem">–</div>
+        <div class="stat-label">Memory %</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon red"><i class="fas fa-hard-drive"></i></div>
+        <div class="stat-value" id="m-disk">–</div>
+        <div class="stat-label">Disk %</div>
+      </div>
     </div>
 
-    <div class="panel assistant">
-      <h2>AI Assistant <span class="badge">offline</span></h2>
-      <div class="log" id="ai-log">
-        <div class="ai">Ask me about phishing, IOCs, logs, Sigma, incidents, or ATT&CK.</div>
+    <!-- AI assistant (real /api/ai) -->
+    <div class="ai-assistant">
+      <div class="ai-header">
+        <h3><i class="fas fa-robot"></i> AI Security Assistant</h3>
+        <span class="ai-status offline">● offline-capable</span>
       </div>
-      <div style="display:flex; gap:8px; margin-top:10px;">
-        <input id="ai-input" placeholder="e.g. explain phishing triage" style="flex:1;">
-        <button onclick="askAi()">Ask</button>
+      <div class="ai-chat"><div class="ai-messages" id="ai-log">
+        <div class="ai-message bot">Ask me about phishing, IOCs, logs, Sigma, incidents, or ATT&CK.</div>
+      </div></div>
+      <div class="ai-input-container">
+        <input class="ai-input" id="ai-input" placeholder="e.g. explain phishing triage">
+        <button class="ai-send-btn" onclick="askAi()"><i class="fas fa-paper-plane"></i> Ask</button>
       </div>
     </div>
 
-    <h2 style="margin:6px 0 12px;">Tools</h2>
-    <div class="grid" id="tool-grid">
+    <!-- Tools (real catalog) -->
+    <div class="section-title"><h3><i class="fas fa-tools"></i> Cybersecurity Tools</h3></div>
+    <div class="tools-grid" id="tool-grid">
       {% for t in tools %}
-      <div class="tool" data-cat="{{ t.category }}">
-        <h3>{{ t.name }}</h3>
-        <div class="row">
-          <span class="badge {{ t.team }}">{{ t.team }}</span>
-          <span class="badge {{ t.health_status }}">{{ t.health_status }}</span>
-          {% if t.installed %}<span class="badge ok">installed</span>{% endif %}
-          {% if t.requires_isolation %}<span class="badge deprecated">sandbox</span>{% endif %}
+      <div class="tool-card" data-cat="{{ t.category }}">
+        <div class="tool-header">
+          <div><div class="tool-name">{{ t.name }}</div></div>
+          <div class="tool-logo"><i class="fas fa-shield-halved"></i></div>
         </div>
-        <div class="note">{{ t.beginner_note }}</div>
-        <div class="actions">
-          <button onclick="openTerm('{{ t.slug }}','install')">Install</button>
-          <button class="ghost" onclick="askRun('{{ t.slug }}','{{ t.name }}')">Run</button>
-          <button class="ghost" onclick="openDocs('{{ t.slug }}')">Docs</button>
+        <div class="tool-badges">
+          <span class="tool-badge {{ t.team }}">{{ t.team }}</span>
+          <span class="tool-badge {{ t.health_status }}">{{ t.health_status }}</span>
+          {% if t.installed %}<span class="tool-badge installed">installed</span>{% endif %}
+          {% if t.requires_isolation %}<span class="tool-badge deprecated">sandbox</span>{% endif %}
+        </div>
+        <div class="tool-desc">{{ t.beginner_note }}</div>
+        <div class="tool-actions">
+          <button class="tool-btn install" onclick="openTerm('{{ t.slug }}','install')">Install</button>
+          <button class="tool-btn run" onclick="askRun('{{ t.slug }}','{{ t.name }}')">Run</button>
+          <button class="tool-btn docs" onclick="openDocs('{{ t.slug }}')">Docs</button>
         </div>
       </div>
       {% endfor %}
     </div>
 
-    <!-- Run-options modal: choose where to run a tool. -->
-    <div id="run-modal" class="modal-overlay" style="display:none;">
+    <!-- Run-options modal -->
+    <div id="run-modal" class="modal-overlay">
       <div class="modal">
         <h3 id="run-modal-title">Run tool</h3>
-        <p style="color:var(--muted); font-size:13px;">Where would you like to run this tool?</p>
-        <div style="display:flex; flex-direction:column; gap:10px; margin-top:10px;">
-          <button onclick="runChoice('browser')">🌐 In-browser terminal (new tab)</button>
-          <button class="ghost" onclick="runChoice('native')">🖥️ Native Kali terminal window</button>
-          <button class="ghost" onclick="runChoice('docs')">📖 Open docs &amp; usage instead</button>
-          <button class="ghost" onclick="closeRun()">Cancel</button>
-        </div>
+        <p>Where would you like to run this tool?</p>
+        <button class="tool-btn run" style="width:100%;" onclick="runChoice('browser')">🌐 In-browser terminal (new tab)</button>
+        <button class="ghost" style="width:100%;" onclick="runChoice('native')">🖥️ Native Kali terminal window</button>
+        <button class="ghost" style="width:100%;" onclick="runChoice('docs')">📖 Open docs &amp; usage instead</button>
+        <button class="ghost" style="width:100%;" onclick="closeRun()">Cancel</button>
         <div id="run-modal-msg" style="margin-top:10px; font-size:13px;"></div>
       </div>
     </div>
 
-    <div class="panel" style="margin-top:22px;">
-      <h2>Recent activity</h2>
+    <!-- Recent activity (real history) -->
+    <div class="panel" style="margin-top:6px;">
+      <div class="panel-header"><h4><i class="fas fa-stream"></i> Recent activity</h4><span class="cyber-badge cyan">Live</span></div>
       <table>
         <tr><th>Tool</th><th>Action</th><th>Result</th><th>When</th></tr>
         {% for h in history %}
         <tr>
           <td>{{ h.tool }}</td><td>{{ h.action }}</td>
-          <td>{% if h.success %}<span class="badge ok">ok</span>{% else %}<span class="badge deprecated">code {{ h.code }}</span>{% endif %}</td>
+          <td>{% if h.success %}<span class="tool-badge installed">ok</span>{% else %}<span class="tool-badge deprecated">code {{ h.code }}</span>{% endif %}</td>
           <td>{{ h.when }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="4" style="color:var(--muted);">No activity yet.</td></tr>
+        <tr><td colspan="4" style="color:var(--text-muted);">No activity yet.</td></tr>
         {% endfor %}
       </table>
     </div>
@@ -109,26 +186,27 @@
 {% endblock %}
 {% block scripts %}
 <script>
-  // Category filtering.
-  document.querySelectorAll('.sidebar .cat[data-cat]').forEach(btn => {
+  function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
+
+  // Category filtering (real categories from the sidebar).
+  document.querySelectorAll('.sidebar .nav-item[data-cat]').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.sidebar .cat[data-cat]').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.sidebar .nav-item[data-cat]').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       const cat = btn.dataset.cat;
-      document.querySelectorAll('#tool-grid .tool').forEach(card => {
+      document.querySelectorAll('#tool-grid .tool-card').forEach(card => {
         card.style.display = (cat === '__all__' || card.dataset.cat === cat) ? '' : 'none';
       });
     });
   });
 
-  function openTerm(slug, action) {
-    window.open(`/terminal?tool=${encodeURIComponent(slug)}&action=${action}`, '_blank');
+  function openTab(url) {
+    const win = window.open(url, '_blank');
+    if (!win || win.closed || typeof win.closed === 'undefined') window.location.href = url;
   }
-  function openDocs(slug) {
-    window.open(`/usage?tool=${encodeURIComponent(slug)}`, '_blank');
-  }
+  function openTerm(slug, action) { openTab(`/terminal?tool=${encodeURIComponent(slug)}&action=${action}`); }
+  function openDocs(slug) { openTab(`/usage?tool=${encodeURIComponent(slug)}`); }
 
-  // Run-options modal: browser terminal vs native Kali terminal vs docs.
   let _runSlug = null;
   function askRun(slug, name) {
     _runSlug = slug;
@@ -136,42 +214,32 @@
     document.getElementById('run-modal-msg').textContent = '';
     document.getElementById('run-modal').style.display = 'flex';
   }
-  function closeRun() {
-    document.getElementById('run-modal').style.display = 'none';
-    _runSlug = null;
-  }
+  function closeRun() { document.getElementById('run-modal').style.display = 'none'; _runSlug = null; }
   async function runChoice(where) {
     if (!_runSlug) return;
-    if (where === 'browser') {
-      openTerm(_runSlug, 'run'); closeRun();
-    } else if (where === 'docs') {
-      openDocs(_runSlug); closeRun();
-    } else if (where === 'native') {
+    if (where === 'browser') { openTab(`/terminal?tool=${encodeURIComponent(_runSlug)}&action=run`); closeRun(); }
+    else if (where === 'docs') { openDocs(_runSlug); closeRun(); }
+    else if (where === 'native') {
       const msg = document.getElementById('run-modal-msg');
       msg.textContent = 'Launching native Kali terminal…';
       try {
-        const r = await fetch('/api/run-target', {
-          method: 'POST', headers: {'Content-Type': 'application/json'},
+        const r = await fetch('/api/run-target', { method: 'POST', headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({tool: _runSlug})});
         const data = await r.json();
         if (data.launched) {
-          msg.innerHTML = '<span style="color:var(--ok)">' + (data.detail || 'Launched.') + '</span>';
+          msg.innerHTML = '<span style="color:var(--green-primary)">' + (data.detail || 'Launched.') + '</span>';
           setTimeout(closeRun, 1200);
         } else {
-          msg.innerHTML = '<span style="color:var(--warn)">' +
-            (data.error || data.detail || 'Could not open a native terminal.') +
-            ' Opening the in-browser terminal instead…</span>';
-          setTimeout(() => { openTerm(_runSlug, 'run'); closeRun(); }, 1600);
+          msg.innerHTML = '<span style="color:var(--orange-primary)">' + (data.error || data.detail || 'Could not open a native terminal.') + ' Opening in-browser terminal…</span>';
+          setTimeout(() => { openTab(`/terminal?tool=${encodeURIComponent(_runSlug)}&action=run`); closeRun(); }, 1600);
         }
-      } catch (e) {
-        msg.innerHTML = '<span style="color:var(--danger)">Request failed.</span>';
-      }
+      } catch (e) { msg.innerHTML = '<span style="color:var(--red-primary)">Request failed.</span>'; }
     }
   }
   function runCustom() {
     const cmd = document.getElementById('custom-cmd').value.trim();
     if (!cmd) return;
-    window.open(`/terminal?cmd=${encodeURIComponent(cmd)}`, '_blank');
+    openTab(`/terminal?cmd=${encodeURIComponent(cmd)}`);
   }
 
   async function refreshMetrics() {
@@ -188,12 +256,11 @@
     const input = document.getElementById('ai-input');
     const log = document.getElementById('ai-log');
     const q = input.value.trim(); if (!q) return;
-    log.innerHTML += `<div class="you">› ${q}</div>`;
+    log.innerHTML += `<div class="ai-message user">${q}</div>`;
     input.value = '';
-    const r = await fetch('/api/ai', {method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({prompt: q})});
+    const r = await fetch('/api/ai', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({prompt: q})});
     const data = await r.json();
-    log.innerHTML += `<div class="ai">${data.reply}</div>`;
+    log.innerHTML += `<div class="ai-message bot">${data.reply}</div>`;
     log.scrollTop = log.scrollHeight;
   }
   document.getElementById('ai-input').addEventListener('keydown', e => { if (e.key === 'Enter') askAi(); });

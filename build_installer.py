@@ -56,25 +56,44 @@ fi
 REAL_USER="${SUDO_USER:-$(id -un)}"
 say "Installing ZorkSec to ${ZORKSEC_HOME} (invoking user: ${REAL_USER})"
 
+# --- python version check (do this first so we know the venv pkg name) -----
+PYBIN="$(command -v python3 || true)"
+[ -n "$PYBIN" ] || die "python3 not found."
+PYV_MAJOR="$($PYBIN -c 'import sys;print(sys.version_info[0])')"
+PYV_MINOR="$($PYBIN -c 'import sys;print(sys.version_info[1])')"
+PYV="${PYV_MAJOR}.${PYV_MINOR}"
+if [ "$PYV_MAJOR" -lt "$PYTHON_MIN_MAJOR" ] || { [ "$PYV_MAJOR" -eq "$PYTHON_MIN_MAJOR" ] && [ "$PYV_MINOR" -lt "$PYTHON_MIN_MINOR" ]; }; then
+  die "Python ${PYTHON_MIN_MAJOR}.${PYTHON_MIN_MINOR}+ required (found ${PYV})."
+fi
+ok "Python ${PYV} detected"
+
 # --- OS / dependency setup -------------------------------------------------
+# On Debian/Ubuntu the venv module ships in a VERSION-SPECIFIC package
+# (e.g. python3.14-venv), so installing the generic 'python3-venv' is not
+# enough on newer Python. We install both the generic and the exact-version
+# package, and continue gracefully if the exact one is unavailable.
 if command -v apt-get >/dev/null 2>&1; then
   say "Installing base dependencies via apt..."
   apt-get update -y >/dev/null 2>&1 || warn "apt-get update failed (continuing)"
   apt-get install -y python3 python3-venv python3-pip git >/dev/null 2>&1 \
     || warn "Some base packages may already be present"
+  # Version-specific venv (the common cause of 'ensurepip is not available').
+  apt-get install -y "python${PYV}-venv" >/dev/null 2>&1 \
+    || warn "python${PYV}-venv not available via apt (will verify venv next)"
 else
   warn "apt-get not found; ensure python3 (>=3.10), python3-venv, pip and git are installed."
 fi
 
-# --- python version check --------------------------------------------------
-PYBIN="$(command -v python3 || true)"
-[ -n "$PYBIN" ] || die "python3 not found."
-PYV_MAJOR="$($PYBIN -c 'import sys;print(sys.version_info[0])')"
-PYV_MINOR="$($PYBIN -c 'import sys;print(sys.version_info[1])')"
-if [ "$PYV_MAJOR" -lt "$PYTHON_MIN_MAJOR" ] || { [ "$PYV_MAJOR" -eq "$PYTHON_MIN_MAJOR" ] && [ "$PYV_MINOR" -lt "$PYTHON_MIN_MINOR" ]; }; then
-  die "Python ${PYTHON_MIN_MAJOR}.${PYTHON_MIN_MINOR}+ required (found ${PYV_MAJOR}.${PYV_MINOR})."
+# --- verify venv actually works before we rely on it -----------------------
+if ! "$PYBIN" -c 'import ensurepip, venv' >/dev/null 2>&1; then
+  warn "Python venv/ensurepip is missing. Attempting to install it..."
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get install -y "python${PYV}-venv" python3-venv >/dev/null 2>&1 || true
+  fi
+  if ! "$PYBIN" -c 'import ensurepip, venv' >/dev/null 2>&1; then
+    die "Python venv is not available. Run:  sudo apt install -y python${PYV}-venv python3-pip  then re-run ./install.sh"
+  fi
 fi
-ok "Python ${PYV_MAJOR}.${PYV_MINOR} detected"
 
 # --- directory layout ------------------------------------------------------
 mkdir -p "$ZORKSEC_HOME"
@@ -113,9 +132,20 @@ ok "Application files written"
 
 # --- python virtual environment -------------------------------------------
 VENV="$ZORKSEC_HOME/.venv"
-if [ ! -d "$VENV" ]; then
+if [ ! -d "$VENV" ] || [ ! -x "$VENV/bin/python" ]; then
   say "Creating virtual environment..."
-  "$PYBIN" -m venv "$VENV"
+  rm -rf "$VENV"
+  if ! "$PYBIN" -m venv "$VENV"; then
+    die "Failed to create the virtual environment. Run:  sudo apt install -y python${PYV}-venv python3-pip  then re-run ./install.sh"
+  fi
+fi
+# Guard: a half-created venv (missing pip) caused the old 'pip: No such file
+# or directory' failure. Bootstrap pip if needed, then verify it exists.
+if [ ! -x "$VENV/bin/pip" ]; then
+  "$VENV/bin/python" -m ensurepip --upgrade >/dev/null 2>&1 || true
+fi
+if [ ! -x "$VENV/bin/pip" ]; then
+  die "pip is missing from the virtual environment. Run:  sudo apt install -y python${PYV}-venv python3-pip  then 'sudo rm -rf $ZORKSEC_HOME' and re-run ./install.sh"
 fi
 say "Installing Python dependencies (this can take a minute)..."
 "$VENV/bin/pip" install --quiet --upgrade pip

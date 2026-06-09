@@ -311,6 +311,28 @@ def test_cors_origins_are_restricted_not_wildcard(zorksec_home):
     assert all(o.startswith("http://") or o.startswith("https://") for o in origins)
 
 
+def test_cors_covers_auto_selected_port_range(zorksec_home):
+    """The terminal hung when an auto-selected port was not allow-listed.
+
+    run_web() falls back to a free port (8000-8100 range) when the default is
+    busy, so those origins must be present or the Socket.IO WebSocket is
+    silently rejected and the terminal sticks on 'connecting...'.
+    """
+    origins = get_settings().allowed_origins()
+    for port in (8000, 8050, 8100):
+        assert f"http://127.0.0.1:{port}" in origins
+
+
+def test_whitelist_bound_origins_injects_exact_origin(zorksec_home, monkeypatch):
+    """A random high port (outside the static range) is added explicitly."""
+    monkeypatch.delenv("ZORKSEC_ALLOWED_ORIGINS", raising=False)
+    from zorksec.web.app import _whitelist_bound_origins
+
+    _whitelist_bound_origins("127.0.0.1", 34567)
+    origins = get_settings().allowed_origins()
+    assert "http://127.0.0.1:34567" in origins
+
+
 def test_secret_key_is_persistent_across_app_instances(zorksec_home):
     settings = get_settings()
     app1, _ = create_app(settings)
