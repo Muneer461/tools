@@ -138,3 +138,56 @@ def test_reset_password_without_question_setup_rejected(settings):
         auth.ensure_default_user()
         with pytest.raises(AuthError):
             auth.reset_password_with_answer(settings.default_username, "x", "BrandNew99!")
+
+
+
+# ---------------------------------------------------------------------------
+# Password-recovery hardening: attempt limit, lockout, generic errors
+# ---------------------------------------------------------------------------
+def test_recovery_locks_after_max_attempts(settings):
+    with session_scope() as session:
+        auth = AuthService(session, settings)
+        auth.ensure_default_user()
+        auth.set_security_question(settings.default_username, "City?", "Hyderabad")
+    # Make (max - 1) wrong attempts; each raises a generic AuthError.
+    for _ in range(settings.max_recovery_attempts - 1):
+        with session_scope() as session:
+            auth = AuthService(session, settings)
+            with pytest.raises(AuthError):
+                auth.reset_password_with_answer(
+                    settings.default_username, "wrong", "BrandNew99!")
+    # The next wrong attempt triggers the lockout.
+    with session_scope() as session:
+        auth = AuthService(session, settings)
+        with pytest.raises(AccountLockedError):
+            auth.reset_password_with_answer(
+                settings.default_username, "wrong", "BrandNew99!")
+    # Even a correct answer is refused while the recovery lockout is active.
+    with session_scope() as session:
+        auth = AuthService(session, settings)
+        with pytest.raises(AccountLockedError):
+            auth.reset_password_with_answer(
+                settings.default_username, "hyderabad", "BrandNew99!")
+
+
+def test_recovery_error_message_is_generic(settings):
+    """Wrong answer / unknown user must not reveal which one failed."""
+    with session_scope() as session:
+        auth = AuthService(session, settings)
+        auth.ensure_default_user()
+        auth.set_security_question(settings.default_username, "City?", "Hyderabad")
+        try:
+            auth.reset_password_with_answer(
+                settings.default_username, "wrong", "BrandNew99!")
+        except AuthError as exc:
+            assert "incorrect" not in str(exc).lower()
+            assert "could not be reset" in str(exc).lower()
+
+
+def test_recovery_unknown_user_generic_error(settings):
+    with session_scope() as session:
+        auth = AuthService(session, settings)
+        auth.ensure_default_user()
+        with pytest.raises(AuthError) as exc:
+            auth.reset_password_with_answer("ghost", "x", "BrandNew99!")
+        assert "could not be reset" in str(exc.value).lower()

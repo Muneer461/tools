@@ -138,6 +138,19 @@ ln -sf "$LAUNCHER" "$BIN_LINK"
 ln -sf "$LAUNCHER" "$ALIAS_LINK"
 ok "Global command installed: zorksec -> $LAUNCHER (alias: tools)"
 
+# Clear this shell's cached command locations so a stale path from a previous
+# install (e.g. ~/.local/bin/zorksec) is not used. bash/zsh cache resolved
+# command paths; after we move the launcher to /usr/local/bin, a cached entry
+# would cause "No such file or directory" until 'hash -r' or a new shell.
+hash -r 2>/dev/null || true
+
+# Warn if some *other* 'zorksec' is earlier in PATH (would shadow this one).
+RESOLVED="$(command -v zorksec 2>/dev/null || true)"
+if [ -n "$RESOLVED" ] && [ "$RESOLVED" != "$BIN_LINK" ]; then
+  warn "Another 'zorksec' is earlier in PATH: $RESOLVED"
+  warn "Remove it or fix PATH so '$BIN_LINK' wins."
+fi
+
 # --- ownership + initialise -------------------------------------------------
 chown -R "$REAL_USER":"$REAL_USER" "$ZORKSEC_HOME" 2>/dev/null || true
 say "Initialising database, catalog, and default user..."
@@ -148,7 +161,11 @@ chown -R "$REAL_USER":"$REAL_USER" "$ZORKSEC_HOME" 2>/dev/null || true
 
 printf "\n"
 ok "ZorkSec installation complete!"
+printf "%b\n" "${c_yellow}IMPORTANT:${c_reset} if 'zorksec' says \"No such file or directory\","
+printf "  run:  ${c_green}hash -r${c_reset}   (or open a new terminal) to refresh the command path.\n"
+printf "  You can also run it directly: ${c_green}%s --web${c_reset}\n" "$BIN_LINK"
 printf "%b\n" "${c_green}Next steps:${c_reset}"
+printf "  hash -r          # refresh shell command cache (first time only)\n"
 printf "  zorksec          # launch the interactive terminal UI\n"
 printf "  zorksec --web    # launch the web dashboard (auto-opens your browser)\n"
 printf "  zorksec doctor   # verify the environment\n"

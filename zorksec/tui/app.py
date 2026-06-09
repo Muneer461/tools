@@ -209,7 +209,10 @@ class TuiApp:
                 return
         with session_scope(self.settings) as session:
             executor = ExecutorService(session)
-            line_printer = lambda text: self.console.print(f"  {text}", highlight=False)
+
+            def line_printer(text: str) -> None:
+                self.console.print(f"  {text}", highlight=False)
+
             try:
                 if install:
                     code = executor.install(row.slug, on_line=line_printer)
@@ -219,7 +222,7 @@ class TuiApp:
                 self.console.print(f"[red]Error: {exc}[/red]")
                 return
         if code == 0:
-            self.console.print(f"[green]Done (exit 0).[/green]")
+            self.console.print("[green]Done (exit 0).[/green]")
         else:
             self.console.print(f"[red]Finished with exit code {code}.[/red]")
 

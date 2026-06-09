@@ -83,6 +83,28 @@ def cmd_discover(_args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_health(args: argparse.Namespace) -> int:
+    """Refresh and display repository health (cached, 60-min TTL)."""
+    from zorksec.config import get_settings
+    from zorksec.services.health_service import HealthService, load_health_cache
+    settings = get_settings()
+    force = bool(getattr(args, "force", False))
+    with session_scope(settings) as session:
+        svc = RegistryService(session)
+        if svc.tools.count() == 0:
+            svc.seed_catalog()
+        result = HealthService(session).refresh_all(settings, force=force)
+    if result.get("skipped"):
+        print(f"{_OK} Health cache is fresh ({result['cached']} tools); use --force to refresh.")
+    else:
+        print(f"{_OK} Health refreshed: {result['refreshed']} tool(s) scored.")
+    cache = load_health_cache(settings).get("tools", {})
+    for slug, info in sorted(cache.items(),
+                             key=lambda kv: kv[1].get("score", 0))[:10]:
+        print(f"  {info.get('status','?'):<10} {info.get('score',0):>3}/100  {slug}")
+    return 0
+
+
 def cmd_tui(args: argparse.Namespace) -> int:
     """Launch the interactive terminal UI."""
     try:
@@ -114,6 +136,26 @@ def cmd_deps(_args: argparse.Namespace) -> int:
         else:
             print(f"{_WARN} {dep.name} missing  -> {dep.install_hint}")
     return 0
+
+
+def cmd_diagnose(args: argparse.Namespace) -> int:
+    """Run the Diagnostic Center checks from the command line."""
+    from zorksec.services.diagnostic_service import DiagnosticService
+    svc = DiagnosticService()
+    report = svc.run_full_diagnostic()
+    print(f"ZorkSec Diagnostic Center - overall: {report.overall.upper()}\n{'-' * 44}")
+    mark = {"ok": _OK, "warning": _WARN, "fail": _FAIL, "unknown": _WARN}
+    for check in report.checks:
+        print(f"{mark.get(check.status, _WARN)} {check.name}: {check.detail}")
+    if getattr(args, "repair", False):
+        print(f"{'-' * 44}\nAuto-repair:")
+        for result in svc.auto_repair():
+            state = "fixed" if result.success else ("failed" if result.attempted else "skipped")
+            print(f"  [{state}] {result.key}: {result.detail}")
+    print(f"{'-' * 44}\nRoot cause analysis:")
+    for line in svc.root_cause_analysis(report):
+        print(f"  - {line}")
+    return 1 if report.overall == "fail" else 0
 
 
 def cmd_version(_args: argparse.Namespace) -> int:
@@ -254,6 +296,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("doctor", help="validate environment, dependencies, and database")
     sub.add_parser("version", help="print version information")
     sub.add_parser("discover", help="detect catalog tools already installed on this host")
+    health = sub.add_parser("health", help="refresh repository health scores (cached 60 min)")
+    health.add_argument("--force", action="store_true",
+                        help="force a refresh even if the cache is still fresh")
     sub.add_parser("deps", help="show build/runtime dependency status")
     cat = sub.add_parser("catalog", help="list the tool catalog for a team profile")
     cat.add_argument("--team", choices=["blue", "red", "both"], default="both",
@@ -262,6 +307,9 @@ def build_parser() -> argparse.ArgumentParser:
     tui.add_argument("--team", choices=["blue", "red", "both"], default="both",
                      help="team profile to load (default: both)")
     sub.add_parser("attack", help="show MITRE ATT&CK tactic coverage")
+    diag = sub.add_parser("diagnose", help="run the Diagnostic Center system checks")
+    diag.add_argument("--repair", action="store_true",
+                      help="attempt safe auto-repairs for failing checks")
     rep = sub.add_parser("report", help="generate and export a SOC report")
     rep.add_argument("--type", choices=["incident", "threat_hunt", "dfir",
                                         "assessment", "executive"], default="incident")
@@ -289,9 +337,11 @@ def main(argv: list[str] | None = None) -> int:
         "version": cmd_version,
         "catalog": cmd_catalog,
         "discover": cmd_discover,
+        "health": cmd_health,
         "deps": cmd_deps,
         "tui": cmd_tui,
         "attack": cmd_attack,
+        "diagnose": cmd_diagnose,
         "report": cmd_report,
     }
     handler = dispatch.get(args.command)

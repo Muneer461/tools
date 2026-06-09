@@ -21,6 +21,8 @@ check_binary    executable name used for installed-state detection (via PATH)
 github          "owner/repo" used by the repository-health engine (optional)
 requires_isolation  True for malware/RE tools that must run sandboxed
 attack          list of (technique_id, technique_name, tactic) ATT&CK mappings
+tier            CORE | ADVANCED | ENTERPRISE | EXTERNAL | LAB (deployment weight)
+resource_class  light | medium | heavy | enterprise (host resource demand)
 """
 
 from __future__ import annotations
@@ -45,6 +47,8 @@ class ToolDef:
     github: str = ""
     requires_isolation: bool = False
     attack: list[tuple[str, str, str]] = field(default_factory=list)
+    tier: str = "CORE"
+    resource_class: str = "light"
 
 
 def _t(*args, **kwargs) -> ToolDef:  # small helper for compact definitions
@@ -446,7 +450,116 @@ _RED: list[ToolDef] = [
 ]
 
 
-CATALOG: list[ToolDef] = _BLUE + _RED
+# ---------------------------------------------------------------------------
+# SOC ENHANCEMENTS: extra Threat Hunting, Detection Engineering, and SOC
+# Utilities tooling requested for the SOC analyst workflow.
+# ---------------------------------------------------------------------------
+_SOC: list[ToolDef] = [
+    # Threat Hunting
+    _t("falco", "Falco", "Cloud-native runtime security and threat detection.",
+       "Threat Hunting", "blue",
+       "Watches syscalls/containers in real time and alerts on suspicious behaviour.",
+       "github", "falcosecurity/falco", "falco --version",
+       "https://falco.org", "Apache-2.0", "falco", "falcosecurity/falco"),
+    _t("arkime", "Arkime", "Large-scale, full packet capture, indexing, and search.",
+       "Threat Hunting", "blue",
+       "Stores and lets you search full network traffic (PCAP) at scale.",
+       "github", "arkime/arkime", "", "https://arkime.com", "Apache-2.0",
+       "", "arkime/arkime"),
+
+    # Detection Engineering
+    _t("pysigma", "pySigma", "Python library to convert Sigma rules into SIEM queries.",
+       "Detection Engineering", "blue",
+       "The engine behind sigma-cli: turns Sigma rules into backend queries.",
+       "pip", "pysigma", "", "https://github.com/SigmaHQ/pySigma", "LGPL-2.1",
+       "", "SigmaHQ/pySigma"),
+    _t("atomic-red-team", "Atomic Red Team", "Library of small, portable detection tests.",
+       "Detection Engineering", "both",
+       "Run safe attack simulations to check whether your detections fire.",
+       "github", "redcanaryco/atomic-red-team", "",
+       "https://atomicredteam.io", "MIT", "", "redcanaryco/atomic-red-team"),
+    _t("caldera", "MITRE Caldera", "Automated adversary emulation platform.",
+       "Detection Engineering", "both",
+       "Emulates adversary techniques end-to-end to validate detections (lab use).",
+       "github", "mitre/caldera", "", "https://caldera.mitre.org", "Apache-2.0",
+       "", "mitre/caldera"),
+    _t("vectr", "VECTR", "Track and report purple-team detection coverage.",
+       "Detection Engineering", "blue",
+       "A platform to plan purple-team tests and measure detection coverage.",
+       "github", "SecurityRiskAdvisors/VECTR", "",
+       "https://vectr.io", "Apache-2.0", "", "SecurityRiskAdvisors/VECTR"),
+    _t("ossem", "OSSEM", "Open Source Security Events Metadata.",
+       "Detection Engineering", "blue",
+       "A common data model so detections work across different log sources.",
+       "github", "OTRF/OSSEM", "", "https://github.com/OTRF/OSSEM",
+       "MIT", "", "OTRF/OSSEM"),
+
+    # SOC Utilities
+    _t("attack-navigator", "ATT&CK Navigator", "Visualise and annotate the MITRE ATT&CK matrix.",
+       "SOC Utilities", "both",
+       "Build colour-coded ATT&CK heatmaps of your coverage and threats.",
+       "github", "mitre-attack/attack-navigator", "",
+       "https://mitre-attack.github.io/attack-navigator/", "Apache-2.0",
+       "", "mitre-attack/attack-navigator"),
+    _t("tshark", "tshark (Wireshark CLI)", "Command-line network protocol analyzer.",
+       "SOC Utilities", "both",
+       "Analyse PCAP capture files from the terminal to investigate traffic.",
+       "apt", "tshark", "tshark --version", "https://www.wireshark.org",
+       "GPL-2.0", "tshark", "wireshark/wireshark"),
+]
+
+
+# ---------------------------------------------------------------------------
+# SOCIAL MEDIA OSINT
+# ---------------------------------------------------------------------------
+# Open-source intelligence on social platforms for *legitimate* purposes only:
+# threat intel, fraud/abuse investigation, missing persons, brand protection,
+# and SOC investigations. These are passive lookup/enumeration tools. Account
+# compromise tooling (credential stuffing, brute force, session hijacking) is
+# explicitly out of scope and intentionally NOT included.
+_SOCIAL_DISCLAIMER = (
+    "OSINT for authorized investigations only - never access accounts without "
+    "permission. "
+)
+_SOCIAL: list[ToolDef] = [
+    # Note: Sherlock, Maigret, and Holehe already live in "OSINT for SOC";
+    # the tools below are the social-media-specific additions.
+    _t("phoneinfoga", "PhoneInfoga", "OSINT reconnaissance on phone numbers.",
+       "Social Media OSINT", "blue",
+       _SOCIAL_DISCLAIMER + "Gathers public information about a phone number.",
+       "go", "github.com/sundowndev/phoneinfoga/v2@latest", "phoneinfoga version",
+       "https://github.com/sundowndev/phoneinfoga", "GPL-3.0", "phoneinfoga",
+       "sundowndev/phoneinfoga", False,
+       [("T1589", "Gather Victim Identity Information", "Reconnaissance")],
+       "CORE", "light"),
+    _t("ignorant", "Ignorant", "Check which sites a phone number is registered on.",
+       "Social Media OSINT", "blue",
+       _SOCIAL_DISCLAIMER + "Phone-number equivalent of Holehe.",
+       "pip", "ignorant", "ignorant --help",
+       "https://github.com/megadose/ignorant", "GPL-3.0", "ignorant",
+       "megadose/ignorant", False, [], "CORE", "light"),
+    _t("social-analyzer", "Social Analyzer", "Analyse and find profiles across social media.",
+       "Social Media OSINT", "blue",
+       _SOCIAL_DISCLAIMER + "API/CLI to find and rate profiles across many platforms.",
+       "pip", "social-analyzer", "social-analyzer --help",
+       "https://github.com/qeeqbox/social-analyzer", "AGPL-3.0", "social-analyzer",
+       "qeeqbox/social-analyzer", False, [], "ADVANCED", "light"),
+    _t("blackbird", "Blackbird", "Fast username search across social networks.",
+       "Social Media OSINT", "blue",
+       _SOCIAL_DISCLAIMER + "Quickly enumerates accounts for a username.",
+       "github", "p1ngul1n0/blackbird", "python3 blackbird.py --help",
+       "https://github.com/p1ngul1n0/blackbird", "MIT", "", "p1ngul1n0/blackbird", False,
+       [], "CORE", "light"),
+    _t("osintgram", "Osintgram", "OSINT on public Instagram profiles.",
+       "Social Media OSINT", "blue",
+       _SOCIAL_DISCLAIMER + "Analyses public Instagram profile data for investigations.",
+       "github", "Datalux/Osintgram", "python3 main.py --help",
+       "https://github.com/Datalux/Osintgram", "GPL-3.0", "", "Datalux/Osintgram", False,
+       [], "ADVANCED", "medium"),
+]
+
+
+CATALOG: list[ToolDef] = _BLUE + _RED + _SOC + _SOCIAL
 
 
 def catalog_by_team(team: str) -> list[ToolDef]:

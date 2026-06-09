@@ -182,23 +182,71 @@ class AuthService:
 
     def reset_password_with_answer(self, username: str, answer: str,
                                    new_password: str) -> None:
-        """Reset a forgotten password after verifying the security answer."""
+        """Reset a forgotten password after verifying the security answer.
+
+        Hardened against brute force / enumeration:
+          * at most ``max_recovery_attempts`` (5) wrong answers per account
+          * a ``recovery_lockout_minutes`` (15) minute lockout after that
+          * every attempt is written to the audit log
+          * error messages are intentionally generic so an attacker cannot
+            distinguish "no such user" from "no recovery configured" from
+            "wrong answer".
+        """
+        # Generic message reused for every recovery failure (no enumeration).
+        generic = "Password could not be reset. Check your details and try again."
+
         if len(new_password) < 8:
             raise AuthError("New password must be at least 8 characters.")
         if new_password == self._settings.default_password:
             raise AuthError("New password must differ from the default password.")
+
         user = self._users.get_by_username(username)
-        if user is None or not user.security_answer_hash:
-            raise AuthError("Password recovery is not set up for this account.")
-        if not self.verify_password(self._normalise_answer(answer), user.security_answer_hash):
+
+        # Respect an active recovery lockout before doing any work.
+        if (user is not None and user.recovery_locked_until
+                and user.recovery_locked_until > _utcnow()):
             self._audit.record("password_reset", username=username,
-                               detail="wrong security answer", success=False)
-            raise AuthError("Security answer is incorrect.")
+                               detail="recovery locked", success=False)
+            raise AccountLockedError(
+                "Too many recovery attempts; try again in "
+                f"{self._settings.recovery_lockout_minutes} minutes."
+            )
+
+        if user is None or not user.security_answer_hash:
+            # Do not reveal whether the account exists or has recovery set up.
+            self._audit.record("password_reset", username=username,
+                               detail="recovery not available", success=False)
+            raise AuthError(generic)
+
+        if not self.verify_password(self._normalise_answer(answer),
+                                    user.security_answer_hash):
+            user.recovery_failed_count += 1
+            remaining = self._settings.max_recovery_attempts - user.recovery_failed_count
+            if user.recovery_failed_count >= self._settings.max_recovery_attempts:
+                user.recovery_locked_until = (
+                    _utcnow() + _dt.timedelta(
+                        minutes=self._settings.recovery_lockout_minutes))
+                user.recovery_failed_count = 0
+                self._audit.record("password_reset", username=username,
+                                   detail="locked after repeated wrong answers",
+                                   success=False)
+                raise AccountLockedError(
+                    "Too many recovery attempts; try again in "
+                    f"{self._settings.recovery_lockout_minutes} minutes."
+                )
+            self._audit.record(
+                "password_reset", username=username,
+                detail=f"wrong security answer ({remaining} attempt(s) left)",
+                success=False)
+            raise AuthError(generic)
+
+        # Correct answer: reset password and clear all throttling state.
         user.password_hash = self.hash_password(new_password)
         user.must_change_password = False
-        # Recovering access also clears any lockout.
         user.failed_login_count = 0
         user.locked_until = None
+        user.recovery_failed_count = 0
+        user.recovery_locked_until = None
         self._audit.record("password_reset", username=username,
                            detail="reset via security question", success=True)
         logger.info("User '%s' reset password via security question", username)

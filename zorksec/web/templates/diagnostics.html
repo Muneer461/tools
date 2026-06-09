@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}ZorkSec - Diagnostic Center{% endblock %}
+{% block head %}
+<style>
+  .diag-wrap { max-width: 980px; margin: 4vh auto; }
+  .diag-actions { display: flex; gap: 10px; flex-wrap: wrap; margin: 14px 0; }
+  .diag-actions button, .diag-actions select {
+    background: var(--accent); color: #03110a; border: none; padding: 9px 14px;
+    border-radius: 8px; font-weight: 700; cursor: pointer; }
+  .diag-actions select { background: var(--panel); color: inherit; border: 1px solid var(--accent); }
+  .check { border: 1px solid #2a3550; border-radius: 10px; padding: 12px 14px;
+    margin-bottom: 10px; background: var(--panel); }
+  .check h3 { margin: 0 0 4px; font-size: 15px; display: flex; justify-content: space-between; }
+  .badge { font-size: 11px; padding: 2px 9px; border-radius: 20px; font-weight: 700; }
+  .ok { background: #11341f; color: #5ff0a0; }
+  .warning { background: #3a2f10; color: #f5d268; }
+  .fail { background: #3a1414; color: #ff8b8b; }
+  .unknown { background: #25304a; color: #9fb3d6; }
+  .detail { font-size: 13px; color: #cdd7ea; margin: 4px 0; }
+  .meta { font-size: 12px; color: #94a3c4; }
+  .summary { font-size: 14px; margin-bottom: 8px; }
+  #rca li { font-size: 13px; margin-bottom: 4px; }
+</style>
+{% endblock %}
+{% block body %}
+<div class="diag-wrap">
+  <h1 style="color: var(--accent);">Diagnostic Center</h1>
+  <p class="meta">Full system diagnostic, auto-repair, root-cause analysis, and
+     exportable reports. Auto-repair runs only safe, non-interactive commands.</p>
+
+  <div class="diag-actions">
+    <button onclick="runDiagnostic()">Run Full Diagnostic</button>
+    <button onclick="autoRepair()">Auto Repair</button>
+    <button onclick="loadGuide()">Manual Repair Guide</button>
+    <select id="fmt">
+      <option value="markdown">Markdown</option>
+      <option value="html">HTML</option>
+      <option value="json">JSON</option>
+      <option value="csv">CSV</option>
+    </select>
+    <button onclick="exportReport()">Export Report</button>
+    <a href="{{ url_for('dashboard') }}" style="margin-left:auto; align-self:center;">Back</a>
+  </div>
+
+  <div id="overall" class="summary"></div>
+  <div id="checks"></div>
+
+  <h2 style="color: var(--accent); font-size:17px;">Root Cause Analysis</h2>
+  <ul id="rca"><li class="meta">Run a diagnostic to see root-cause analysis.</li></ul>
+
+  <h2 style="color: var(--accent); font-size:17px;">Manual Repair Guide</h2>
+  <div id="guide" class="meta">Click "Manual Repair Guide" to load step-by-step fixes.</div>
+  <div id="status" class="meta" style="margin-top:14px;"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  function badge(status) { return '<span class="badge ' + status + '">' + status.toUpperCase() + '</span>'; }
+
+  async function runDiagnostic() {
+    setStatus('Running full diagnostic...');
+    const r = await fetch('{{ url_for("api_diagnostics") }}');
+    const data = await r.json();
+    const c = data.counts;
+    document.getElementById('overall').innerHTML =
+      'Overall: ' + badge(data.overall) +
+      ' &nbsp; ok:' + c.ok + ' warning:' + c.warning + ' fail:' + c.fail + ' unknown:' + c.unknown;
+    document.getElementById('checks').innerHTML = data.checks.map(ch =>
+      '<div class="check"><h3>' + ch.name + badge(ch.status) + '</h3>' +
+      '<div class="detail">' + (ch.detail || '') + '</div>' +
+      (ch.root_cause ? '<div class="meta">Root cause: ' + ch.root_cause + '</div>' : '') +
+      (ch.manual_fix ? '<div class="meta">Fix: ' + ch.manual_fix + '</div>' : '') +
+      '</div>').join('');
+    document.getElementById('rca').innerHTML = (data.root_cause || [])
+      .map(x => '<li>' + x + '</li>').join('');
+    setStatus('Diagnostic complete.');
+  }
+
+  async function autoRepair() {
+    setStatus('Attempting safe auto-repairs...');
+    const r = await fetch('{{ url_for("api_diagnostics_repair") }}', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+    const data = await r.json();
+    setStatus('Auto-repair: ' + data.results.map(x =>
+      x.key + ' -> ' + (x.attempted ? (x.success ? 'fixed' : 'failed') : 'skipped')).join(', '));
+    runDiagnostic();
+  }
+
+  async function loadGuide() {
+    const r = await fetch('{{ url_for("api_diagnostics_guide") }}');
+    const data = await r.json();
+    document.getElementById('guide').innerHTML = Object.entries(data.guide)
+      .map(([k, v]) => '<div style="margin-bottom:6px;"><b>' + k + ':</b> ' + v + '</div>').join('');
+  }
+
+  async function exportReport() {
+    const fmt = document.getElementById('fmt').value;
+    setStatus('Exporting report...');
+    const r = await fetch('{{ url_for("api_diagnostics_export") }}', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({format: fmt})});
+    const data = await r.json();
+    setStatus(data.path ? ('Report written to: ' + data.path) : ('Error: ' + data.error));
+  }
+
+  function setStatus(msg) { document.getElementById('status').textContent = msg; }
+  runDiagnostic();
+</script>
+{% endblock %}

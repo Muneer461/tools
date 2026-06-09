@@ -10,16 +10,21 @@ offline or rate-limited.
 from __future__ import annotations
 
 import datetime as _dt
+import json
+import threading
 from dataclasses import dataclass
+from pathlib import Path
 
 from sqlalchemy.orm import Session
 
+from zorksec.config import Settings, get_settings
 from zorksec.repositories.tool_repository import ToolRepository
 from zorksec.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 GITHUB_API = "https://api.github.com/repos/{repo}"
+HEALTH_CACHE_TTL_MINUTES = 60
 
 
 @dataclass
@@ -157,3 +162,103 @@ class HealthService:
     @staticmethod
     def _unknown(reason: str) -> HealthResult:
         return HealthResult(0, "unknown", 0, False, None, None, reason)
+
+    # ----- bulk / cached refresh -------------------------------------------
+    def refresh_all(self, settings: Settings | None = None,
+                    force: bool = False, limit: int | None = None) -> dict:
+        """Refresh health for every catalog tool that has a GitHub repo.
+
+        Results are persisted to the DB *and* a JSON cache. When ``force`` is
+        False and the cache is still fresh (< 60 min), the refresh is skipped so
+        the UI is not blocked and the GitHub API is not hammered.
+        """
+        settings = settings or get_settings()
+        cache = load_health_cache(settings)
+        if not force and cache_is_fresh(cache):
+            logger.info("Health cache fresh; skipping refresh")
+            return {"refreshed": 0, "skipped": True,
+                    "cached": len(cache.get("tools", {}))}
+
+        from zorksec.registry.catalog import CATALOG
+
+        repos = [(d.slug, d.github) for d in CATALOG if d.github]
+        if limit is not None:
+            repos = repos[:limit]
+        tools_cache: dict[str, dict] = {}
+        refreshed = 0
+        for slug, _repo in repos:
+            result = self.refresh_tool(slug)
+            if result is None:
+                continue
+            refreshed += 1
+            tools_cache[slug] = {
+                "score": result.score,
+                "status": result.status,
+                "stars": result.stars,
+                "archived": result.archived,
+            }
+        save_health_cache(settings, tools_cache)
+        logger.info("Health refresh complete: %d tools scored", refreshed)
+        return {"refreshed": refreshed, "skipped": False, "cached": len(tools_cache)}
+
+
+# ---------------------------------------------------------------------------
+# Cache helpers (tool_health.json) + background refresh
+# ---------------------------------------------------------------------------
+def health_cache_path(settings: Settings) -> Path:
+    """Location of the persisted health cache."""
+    return settings.home / "tool_health.json"
+
+
+def load_health_cache(settings: Settings) -> dict:
+    """Load the health cache ({'updated_at':iso, 'tools':{slug:{...}}})."""
+    try:
+        return json.loads(health_cache_path(settings).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def save_health_cache(settings: Settings, tools: dict) -> dict:
+    """Persist the health cache with a fresh timestamp; returns the written doc."""
+    doc = {"updated_at": _dt.datetime.utcnow().isoformat(timespec="seconds"),
+           "tools": tools}
+    path = health_cache_path(settings)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(doc, indent=2), encoding="utf-8")
+    return doc
+
+
+def cache_is_fresh(cache: dict, ttl_minutes: int = HEALTH_CACHE_TTL_MINUTES) -> bool:
+    """True if the cache has a timestamp newer than ``ttl_minutes`` ago."""
+    updated = cache.get("updated_at")
+    if not updated:
+        return False
+    try:
+        ts = _dt.datetime.fromisoformat(updated)
+    except ValueError:
+        return False
+    age = _dt.datetime.utcnow() - ts
+    return age < _dt.timedelta(minutes=ttl_minutes)
+
+
+def start_background_refresh(settings: Settings | None = None,
+                             force: bool = False) -> threading.Thread:
+    """Refresh repository health on a daemon thread so startup never blocks.
+
+    Opens its own DB session (SQLAlchemy sessions are not thread-safe) and
+    fails safe: any error is logged and the thread exits quietly.
+    """
+    settings = settings or get_settings()
+
+    def _worker() -> None:
+        try:
+            from zorksec.db.session import session_scope
+
+            with session_scope(settings) as session:
+                HealthService(session).refresh_all(settings, force=force)
+        except Exception as exc:  # pragma: no cover - background safety
+            logger.warning("Background health refresh failed: %s", exc)
+
+    thread = threading.Thread(target=_worker, name="health-refresh", daemon=True)
+    thread.start()
+    return thread
