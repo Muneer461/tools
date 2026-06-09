@@ -15,6 +15,7 @@ from __future__ import annotations
 import datetime as _dt
 import functools
 import hmac
+import os
 import secrets
 import shlex
 from typing import Callable
@@ -634,6 +635,58 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
                 return {"error": str(exc)}, 400
         return {"path": path}
 
+    # ------------------------------------------------------------------ Kali diagnostics
+    @app.route("/kali-diagnostics")
+    @_login_required
+    def kali_diagnostics():
+        return render_template("kali_diagnostics.html", theme=theme(),
+                               team=current_team())
+
+    @app.route("/api/kali/scan")
+    @_login_required
+    def api_kali_scan():
+        from zorksec.services.kali_diagnostics_service import KaliDiagnosticsService
+        svc = KaliDiagnosticsService()
+        report = svc.scan()
+        payload = report.to_dict()
+        payload["root_cause"] = svc.root_cause_analysis(report)
+        return payload
+
+    @app.route("/api/kali/repair", methods=["POST"])
+    @_login_required
+    def api_kali_repair():
+        """Auto or manual repair. mode=auto runs safe fixes; mode=manual returns steps."""
+        from zorksec.services.kali_diagnostics_service import KaliDiagnosticsService
+        data = request.get_json(silent=True) or {}
+        mode = data.get("mode", "auto")
+        keys = data.get("keys")
+        username = flask_session.get("username")
+        svc = KaliDiagnosticsService()
+        if mode == "manual":
+            return {"mode": "manual", "guide": svc.manual_guide()}
+        results = svc.auto_repair(keys)
+        with session_scope(settings) as db:
+            AuditRepository(db).record(
+                "kali_repair", username=username,
+                detail=f"auto-repair {keys or 'all failing'}", success=True)
+        return {"mode": "auto", "results": [r.to_dict() for r in results]}
+
+    # ------------------------------------------------------------------ Help Center
+    @app.route("/help")
+    @_login_required
+    def help_center():
+        return render_template("help_center.html", theme=theme(),
+                               team=current_team())
+
+    @app.route("/api/help/ask", methods=["POST"])
+    @_login_required
+    def api_help_ask():
+        """Answer a help question using internet search (with offline fallback)."""
+        from zorksec.services.help_center_service import HelpCenterService
+        data = request.get_json(silent=True) or {}
+        answer = HelpCenterService().ask(data.get("query", ""))
+        return answer.to_dict()
+
     @app.route("/api/tools")
     @_login_required
     def api_tools():
@@ -851,6 +904,27 @@ def _find_free_port(host: str, preferred: int, attempts: int = 12) -> int:
         return sock.getsockname()[1]
 
 
+def _whitelist_bound_origins(host: str, port: int) -> None:
+    """Ensure the exact bound origin is in the Socket.IO CORS allow-list.
+
+    ``allowed_origins()`` covers common/loopback ports, but ``_find_free_port``
+    can fall back to a random high port. We append the precise origins (for the
+    bound host plus the loopback aliases) to ``ZORKSEC_ALLOWED_ORIGINS`` so the
+    browser's WebSocket ``Origin`` always matches and the terminal connects.
+    """
+    hosts = {host, "127.0.0.1", "localhost", "[::1]"}
+    new_origins: list[str] = []
+    for h in hosts:
+        new_origins.append(f"http://{h}:{port}")
+        new_origins.append(f"https://{h}:{port}")
+    existing = os.environ.get("ZORKSEC_ALLOWED_ORIGINS", "")
+    parts = [p.strip() for p in existing.split(",") if p.strip()]
+    for origin in new_origins:
+        if origin not in parts:
+            parts.append(origin)
+    os.environ["ZORKSEC_ALLOWED_ORIGINS"] = ",".join(parts)
+
+
 def _open_browser_when_ready(url: str, host: str, port: int) -> None:
     """Open the default browser once the server is accepting connections.
 
@@ -881,11 +955,20 @@ def run_web(host: str | None = None, port: int | None = None,
             settings: Settings | None = None, open_browser: bool = True) -> int:
     """Run the dashboard: auto-pick a free port, open the browser, graceful Ctrl+C."""
     settings = settings or get_settings()
-    app, socketio = create_app(settings)
 
     # Beginner-safe binding: stay on localhost until the default password is changed.
     bind_host = host or settings.web_host
     preferred_port = port or settings.web_port
+
+    # Resolve the final bind port BEFORE building the app so we can guarantee
+    # the exact origin is in the Socket.IO CORS allow-list. Without this, an
+    # auto-selected port (when the default is busy) would not be allow-listed
+    # and the in-browser terminal's WebSocket would be silently rejected,
+    # leaving the terminal stuck on "connecting...".
+    bind_port = _find_free_port(bind_host, preferred_port)
+    _whitelist_bound_origins(bind_host, bind_port)
+
+    app, socketio = create_app(settings)
 
     with session_scope(settings) as db:
         auth = AuthService(db, settings)
@@ -895,9 +978,11 @@ def run_web(host: str | None = None, port: int | None = None,
         logger.warning("Refusing to bind to %s with default password; using 127.0.0.1.",
                        bind_host)
         bind_host = "127.0.0.1"
+        # Host changed -> re-resolve the port and re-whitelist for the new host.
+        bind_port = _find_free_port(bind_host, preferred_port)
+        _whitelist_bound_origins(bind_host, bind_port)
+        app, socketio = create_app(settings)
 
-    # Auto-select a free port so a busy port never blocks startup.
-    bind_port = _find_free_port(bind_host, preferred_port)
     if bind_port != preferred_port:
         logger.info("Port %s busy; using free port %s instead.", preferred_port, bind_port)
 

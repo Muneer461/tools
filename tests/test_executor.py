@@ -130,3 +130,42 @@ def test_install_heavy_tool_requires_confirmation(zorksec_home):
         code = ExecutorService(db).install("misp", lines.append, confirmed=False)
     assert code == 125
     assert any("HIGH RESOURCE WARNING" in ln for ln in lines)
+
+
+
+# ---------------------------------------------------------------------------
+# Run with user-supplied arguments (fixes "Run only prints --version")
+# ---------------------------------------------------------------------------
+from dataclasses import dataclass as _dataclass
+
+from zorksec.services.executor_service import build_run_command
+
+
+@_dataclass
+class _FakeTool:
+    slug: str
+    install_method: str = "apt"
+    install_target: str = "nmap"
+    run_command: str = "nmap --version"
+
+
+def test_run_command_default_is_catalog_command():
+    cmd = build_run_command(_FakeTool(slug="nmap"))
+    assert cmd.shell is True
+    assert cmd.argv[0] == "nmap --version"
+
+
+def test_run_command_with_extra_args_uses_binary(monkeypatch):
+    # extra_args should produce '<binary> <args>' rather than the --version smoke check.
+    cmd = build_run_command(_FakeTool(slug="nmap"), extra_args="-sV 127.0.0.1")
+    assert cmd.shell is True
+    assert cmd.argv[0] == "nmap -sV 127.0.0.1"
+    assert "--version" not in cmd.argv[0]
+
+
+def test_run_command_extra_args_falls_back_to_run_command_token():
+    # A tool whose check_binary is empty in the catalog still runs via the
+    # first token of its run_command.
+    tool = _FakeTool(slug="nonexistent-slug", run_command="mytool --help")
+    cmd = build_run_command(tool, extra_args="scan target")
+    assert cmd.argv[0] == "mytool scan target"

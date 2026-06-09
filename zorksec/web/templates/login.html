@@ -1,59 +1,216 @@
 {% extends "base.html" %}
-{% block title %}ZorkSec - Login{% endblock %}
+{% block title %}ZorkSec - Cybersecurity Analysis Platform L1{% endblock %}
 {% block head %}
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <style>
-  body { margin: 0; overflow: hidden; background: #000; }
-  #matrix { position: fixed; inset: 0; z-index: 0; }
-  .login-card {
-    position: relative; z-index: 1; width: 340px; margin: 12vh auto 0;
-    background: rgba(8, 12, 20, 0.88); border: 1px solid #1c9c5a; border-radius: 14px;
-    padding: 28px; color: #d6ffe6; box-shadow: 0 0 40px rgba(28,156,90,0.35);
-    font-family: "Segoe UI", system-ui, sans-serif;
+  :root {
+    --bg-primary: #0a0a1a; --bg-secondary: #0d0d24;
+    --border-color: rgba(128, 90, 255, 0.15);
+    --purple-primary: #805aff; --purple-secondary: #a78bfa; --purple-dark: #6344cc;
+    --cyan-primary: #00d4ff; --red-primary: #ff4757; --green-primary: #2ecc71;
+    --text-primary: #e8e8f0; --text-secondary: #8888aa; --text-muted: #555577;
+    --radius-sm: 8px; --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
-  .login-card h1 { color: #36d399; text-align: center; margin: 0 0 4px; letter-spacing: 2px; }
-  .login-card .sub { text-align: center; color: #6fcf97; font-size: 12px; margin-bottom: 18px; }
-  .login-card input { width: 100%; margin-bottom: 12px; background: #04140b; color: #d6ffe6;
-    border: 1px solid #1c9c5a; border-radius: 8px; padding: 10px; }
-  .login-card button { width: 100%; background: #1c9c5a; color: #021a0d; border: none;
-    padding: 11px; border-radius: 8px; font-weight: 700; cursor: pointer; }
-  .creds { margin-top: 16px; font-size: 12px; text-align: center; color: #6fcf97; }
-  .err { background: rgba(248,114,114,0.15); border: 1px solid #f87272; color: #ffd5d5;
-    padding: 8px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; text-align: center; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg-primary);
+    color: var(--text-primary); overflow: hidden; min-height: 100vh; }
+
+  #loginPage { position: fixed; inset: 0; z-index: 10000; display: flex;
+    align-items: center; justify-content: center; background: var(--bg-primary); }
+  .login-bg-canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; }
+  .login-particles { position: absolute; inset: 0; z-index: 1; overflow: hidden; }
+  .particle { position: absolute; width: 3px; height: 3px; background: var(--purple-primary);
+    border-radius: 50%; animation: particleFloat linear infinite; opacity: 0.6; }
+  .particle.cyan { background: var(--cyan-primary); }
+  .particle.red { background: var(--red-primary); }
+  @keyframes particleFloat {
+    0% { transform: translateY(100vh) rotate(0deg); opacity: 0; }
+    10% { opacity: 0.8; } 90% { opacity: 0.8; }
+    100% { transform: translateY(-10vh) rotate(720deg); opacity: 0; }
+  }
+  .cyber-grid-bg { position: absolute; inset: 0; z-index: 1;
+    background-image:
+      linear-gradient(rgba(128, 90, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(128, 90, 255, 0.03) 1px, transparent 1px);
+    background-size: 50px 50px; animation: gridScan 8s linear infinite; }
+  @keyframes gridScan { 0% { background-position: 0 0; } 100% { background-position: 50px 50px; } }
+
+  .login-container { position: relative; z-index: 10; width: 100%; max-width: 460px; padding: 20px; }
+  .login-card { background: rgba(15, 15, 40, 0.85); backdrop-filter: blur(30px);
+    border: 1px solid var(--border-color); border-radius: 20px; padding: 46px 40px;
+    position: relative; overflow: hidden;
+    box-shadow: 0 0 60px rgba(128, 90, 255, 0.15), 0 30px 60px rgba(0, 0, 0, 0.5); }
+  .login-card::before { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 3px;
+    background: linear-gradient(90deg, transparent, var(--purple-primary), var(--cyan-primary), var(--purple-primary), transparent);
+    animation: scanLine 3s linear infinite; }
+  @keyframes scanLine { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+  .login-card::after { content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
+    background: conic-gradient(from 0deg, transparent, rgba(128,90,255,0.05), transparent, rgba(0,212,255,0.03), transparent);
+    animation: rotateGlow 10s linear infinite; z-index: -1; }
+  @keyframes rotateGlow { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+  .login-logo { text-align: center; margin-bottom: 32px; }
+  .login-logo .shield-icon { width: 80px; height: 80px; margin: 0 auto 16px; position: relative;
+    animation: shieldPulse 2s ease-in-out infinite; }
+  @keyframes shieldPulse {
+    0%, 100% { filter: drop-shadow(0 0 15px rgba(128, 90, 255, 0.4)); transform: scale(1); }
+    50% { filter: drop-shadow(0 0 30px rgba(128, 90, 255, 0.7)); transform: scale(1.05); }
+  }
+  .login-logo .shield-icon svg { width: 100%; height: 100%; }
+  .login-logo h1 { font-family: 'Orbitron', sans-serif; font-size: 28px; font-weight: 800;
+    background: linear-gradient(135deg, var(--purple-primary), var(--cyan-primary));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    letter-spacing: 3px; }
+  .login-logo p { color: var(--text-secondary); font-size: 13px; margin-top: 6px; letter-spacing: 1px; }
+
+  .login-form { display: flex; flex-direction: column; gap: 20px; }
+  .form-group { position: relative; }
+  .form-group label { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600;
+    color: var(--text-secondary); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+  .form-group label i { color: var(--purple-primary); font-size: 14px; }
+  .form-group input { width: 100%; padding: 14px 46px 14px 46px; background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: var(--text-primary);
+    font-size: 15px; font-family: 'Inter', sans-serif; transition: var(--transition); outline: none; }
+  .form-group input:focus { border-color: var(--purple-primary);
+    box-shadow: 0 0 0 3px rgba(128, 90, 255, 0.15), 0 0 20px rgba(128, 90, 255, 0.1);
+    background: rgba(128, 90, 255, 0.05); }
+  .form-group input::placeholder { color: var(--text-muted); }
+  .form-group .input-icon { position: absolute; left: 16px; top: 41px; color: var(--text-muted);
+    font-size: 16px; transition: var(--transition); z-index: 2; }
+  .form-group input:focus ~ .input-icon { color: var(--purple-primary); }
+  .password-toggle { position: absolute; right: 16px; top: 41px; color: var(--text-muted); cursor: pointer;
+    transition: var(--transition); z-index: 2; background: none; border: none; font-size: 16px; }
+  .password-toggle:hover { color: var(--purple-primary); }
+
+  .login-btn { width: 100%; padding: 16px;
+    background: linear-gradient(135deg, var(--purple-primary), var(--purple-dark)); border: none;
+    border-radius: var(--radius-sm); color: #fff; font-size: 16px; font-weight: 700;
+    font-family: 'Inter', sans-serif; cursor: pointer; transition: var(--transition);
+    position: relative; overflow: hidden; text-transform: uppercase; letter-spacing: 2px; }
+  .login-btn::before { content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent); transition: 0.5s; }
+  .login-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(128, 90, 255, 0.4); }
+  .login-btn:hover::before { left: 100%; }
+  .login-btn.loading { pointer-events: none; opacity: 0.8; }
+  .login-btn .btn-text { display: inline-flex; align-items: center; gap: 10px; }
+  .login-btn .spinner { display: none; width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: #fff; border-radius: 50%; animation: spin 0.8s linear infinite; }
+  .login-btn.loading .spinner { display: inline-block; }
+  .login-btn.loading .btn-text { display: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .login-error { background: rgba(255, 71, 87, 0.1); border: 1px solid rgba(255, 71, 87, 0.2);
+    border-radius: var(--radius-sm); padding: 12px 16px; font-size: 13px; color: var(--red-primary);
+    display: flex; align-items: center; gap: 8px; animation: shakeError 0.5s ease; }
+  @keyframes shakeError {
+    0%, 100% { transform: translateX(0); } 20% { transform: translateX(-10px); }
+    40% { transform: translateX(10px); } 60% { transform: translateX(-5px); } 80% { transform: translateX(5px); }
+  }
+  .login-foot { text-align: center; margin-top: 4px; font-size: 13px; color: var(--text-secondary); }
+  .login-foot b { color: var(--cyan-primary); }
+  .login-foot a { color: var(--purple-secondary); text-decoration: none; font-weight: 600; }
+  .login-foot a:hover { color: var(--purple-primary); }
+  .login-foot .ver { display: block; margin-top: 10px; font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; color: var(--text-muted); letter-spacing: 1px; }
+  @media (max-width: 480px) { .login-card { padding: 32px 24px; } }
 </style>
 {% endblock %}
 {% block body %}
-<canvas id="matrix"></canvas>
-<form class="login-card" method="post">
-  <h1>ZorkSec</h1>
-  <div class="sub">SOC L1 Learning Edition</div>
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  {% if error %}<div class="err">{{ error }}</div>{% endif %}
-  <input name="username" placeholder="Username" autofocus autocomplete="username">
-  <input name="password" type="password" placeholder="Password" autocomplete="current-password">
-  <button type="submit">ENTER</button>
-  <div class="creds">Default login &mdash; <b>{{ default_user }}</b> / <b>{{ default_pass }}</b><br>
-  (you'll be asked to change it)</div>
-  <div style="margin-top:12px; text-align:center;">
-    <a href="{{ url_for('forgot_password') }}" style="color:#6fcf97; font-size:13px;">Forgot password?</a>
+<div id="loginPage">
+  <canvas class="login-bg-canvas" id="loginBgCanvas"></canvas>
+  <div class="cyber-grid-bg"></div>
+  <div class="login-particles" id="loginParticles"></div>
+
+  <div class="login-container">
+    <div class="login-card">
+      <div class="login-logo">
+        <div class="shield-icon">
+          <svg viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" style="stop-color:#805aff"/>
+                <stop offset="50%" style="stop-color:#00d4ff"/>
+                <stop offset="100%" style="stop-color:#805aff"/>
+              </linearGradient>
+            </defs>
+            <path d="M40 5L10 20V42c0 18 12 31 30 35 18-4 30-17 30-35V20L40 5z" fill="url(#shieldGrad)" opacity="0.15" stroke="url(#shieldGrad)" stroke-width="2"/>
+            <path d="M40 15L20 26V42c0 13 8 22 20 25 12-3 20-12 20-25V26L40 15z" fill="url(#shieldGrad)" opacity="0.1"/>
+            <text x="40" y="50" text-anchor="middle" fill="white" font-family="Orbitron, sans-serif" font-size="24" font-weight="900">Z</text>
+          </svg>
+        </div>
+        <h1>ZORKSEC</h1>
+        <p>Cybersecurity Analysis Platform — L1</p>
+      </div>
+
+      {% if error %}
+      <div class="login-error" style="margin-bottom:20px;">
+        <i class="fas fa-exclamation-triangle"></i><span>{{ error }}</span>
+      </div>
+      {% endif %}
+
+      <form class="login-form" id="loginForm" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group">
+          <label><i class="fas fa-fingerprint"></i> Username</label>
+          <input type="text" name="username" id="loginUserId" placeholder="Enter your username"
+                 required autocomplete="username" autofocus>
+          <i class="fas fa-user input-icon"></i>
+        </div>
+
+        <div class="form-group">
+          <label><i class="fas fa-key"></i> Password</label>
+          <input type="password" name="password" id="loginPassword" placeholder="Enter your password"
+                 required autocomplete="current-password">
+          <i class="fas fa-lock input-icon"></i>
+          <button type="button" class="password-toggle" onclick="togglePassword('loginPassword', this)">
+            <i class="fas fa-eye"></i>
+          </button>
+        </div>
+
+        <button type="submit" class="login-btn" id="loginBtn">
+          <span class="btn-text"><i class="fas fa-fingerprint"></i> AUTHENTICATE &amp; ACCESS DASHBOARD</span>
+          <span class="spinner"></span>
+        </button>
+      </form>
+
+      <div class="login-foot" style="margin-top:18px;">
+        Default login &mdash; <b>{{ default_user }}</b> / <b>{{ default_pass }}</b><br>
+        <a href="{{ url_for('forgot_password') }}" style="display:inline-block; margin-top:8px;">
+          <i class="fas fa-shield-halved"></i> Forgot password? Use security question</a>
+        <span class="ver">ZorkSec v1.0.0 | Kali Linux Edition | Muneer461 / Zork</span>
+      </div>
+    </div>
   </div>
-</form>
+</div>
 {% endblock %}
 {% block scripts %}
 <script>
-  // Matrix rain animation.
-  const canvas = document.getElementById('matrix');
+  // Show/hide password.
+  function togglePassword(inputId, btn) {
+    const input = document.getElementById(inputId);
+    const icon = btn.querySelector('i');
+    if (input.type === 'password') { input.type = 'text'; icon.className = 'fas fa-eye-slash'; }
+    else { input.type = 'password'; icon.className = 'fas fa-eye'; }
+  }
+  // Spinner on submit (form posts normally to Flask).
+  document.getElementById('loginForm').addEventListener('submit', () => {
+    document.getElementById('loginBtn').classList.add('loading');
+  });
+
+  // Matrix rain background.
+  const canvas = document.getElementById('loginBgCanvas');
   const ctx = canvas.getContext('2d');
-  function resize() { canvas.width = innerWidth; canvas.height = innerHeight; }
-  resize(); addEventListener('resize', resize);
-  const chars = 'アカサタナハマヤラワ0123456789ABCDEFセキュリティ'.split('');
-  const fontSize = 16;
-  let columns = Math.floor(canvas.width / fontSize);
-  let drops = Array(columns).fill(1);
-  function draw() {
-    ctx.fillStyle = 'rgba(0,0,0,0.06)';
+  function sizeCanvas() { canvas.width = innerWidth; canvas.height = innerHeight; }
+  sizeCanvas();
+  const chars = 'ZORKSEC0123456789ABCDEF<>{}[]|/\\@#$%'.split('');
+  const fontSize = 14;
+  let drops = Array(Math.floor(canvas.width / fontSize)).fill(1);
+  function drawMatrix() {
+    ctx.fillStyle = 'rgba(10, 10, 26, 0.05)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#36d399';
-    ctx.font = fontSize + 'px monospace';
+    ctx.fillStyle = 'rgba(128, 90, 255, 0.15)';
+    ctx.font = fontSize + 'px JetBrains Mono, monospace';
     for (let i = 0; i < drops.length; i++) {
       const text = chars[Math.floor(Math.random() * chars.length)];
       ctx.fillText(text, i * fontSize, drops[i] * fontSize);
@@ -61,6 +218,21 @@
       drops[i]++;
     }
   }
-  setInterval(draw, 50);
+  setInterval(drawMatrix, 50);
+  addEventListener('resize', () => { sizeCanvas(); drops = Array(Math.floor(canvas.width / fontSize)).fill(1); });
+
+  // Floating particles.
+  const particlesContainer = document.getElementById('loginParticles');
+  const colors = ['purple', 'cyan', 'red'];
+  for (let i = 0; i < 40; i++) {
+    const p = document.createElement('div');
+    p.className = 'particle ' + colors[Math.floor(Math.random() * colors.length)];
+    p.style.left = Math.random() * 100 + '%';
+    p.style.animationDuration = (Math.random() * 8 + 5) + 's';
+    p.style.animationDelay = (Math.random() * 5) + 's';
+    const size = (Math.random() * 3 + 1) + 'px';
+    p.style.width = size; p.style.height = size;
+    particlesContainer.appendChild(p);
+  }
 </script>
 {% endblock %}

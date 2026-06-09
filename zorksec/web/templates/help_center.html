@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}ZorkSec - Help Center{% endblock %}
+{% block head %}
+<style>
+  .help-wrap { max-width: 860px; margin: 5vh auto; }
+  .ask-row { display:flex; gap:10px; margin: 16px 0; }
+  .ask-row input { flex:1; height:48px; font-size:15px; padding:10px 14px;
+    background: rgba(255,255,255,0.05); border:1px solid var(--accent);
+    border-radius:10px; color:inherit; }
+  .ask-row button { background: var(--accent); color:#03110a; border:none;
+    padding:0 20px; border-radius:10px; font-weight:700; cursor:pointer; }
+  .answer { background: var(--panel); border:1px solid #2a3550; border-radius:12px;
+    padding:16px 18px; margin-top:14px; white-space:pre-wrap; line-height:1.55;
+    font-size:14px; }
+  .src { font-size:11px; padding:2px 9px; border-radius:20px; font-weight:700; }
+  .src.web { background:#0d2a3a; color:#8be9fd; }
+  .src.local { background:#25304a; color:#9fb3d6; }
+  .src.offline { background:#3a2f10; color:#f5d268; }
+  .results { margin-top:14px; }
+  .result { border:1px solid #2a3550; border-radius:10px; padding:10px 14px;
+    margin-bottom:8px; background: var(--panel); }
+  .result a { color:#8be9fd; font-weight:600; text-decoration:none; }
+  .result .snip { font-size:12px; color:#94a3c4; margin-top:4px; }
+  .hint { color:#94a3c4; font-size:13px; }
+  .chips { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .chips button { font-size:12px; padding:6px 10px; border-radius:16px; cursor:pointer;
+    border:1px solid var(--accent); background:transparent; color:inherit; }
+</style>
+{% endblock %}
+{% block body %}
+<div class="help-wrap">
+  <h1 style="color: var(--accent);">Help Center</h1>
+  <p class="hint">Ask anything about ZorkSec, Kali, SOC tools, or errors you hit.
+     When you're online I search the web and cite sources; offline I answer from
+     a built-in knowledge base.</p>
+
+  <div class="ask-row">
+    <input id="q" placeholder="e.g. how to fix dpkg interrupted on Kali"
+           autofocus onkeydown="if(event.key==='Enter')ask()">
+    <button onclick="ask()">Ask</button>
+  </div>
+  <div class="chips">
+    <button onclick="quick('command not found after install')">command not found</button>
+    <button onclick="quick('fix broken apt dpkg on kali')">apt/dpkg broken</button>
+    <button onclick="quick('terminal stuck loading')">terminal loading</button>
+    <button onclick="quick('what is a sigma rule')">Sigma rules</button>
+  </div>
+
+  <div id="answer"></div>
+  <div id="results" class="results"></div>
+  <div style="margin-top:18px;"><a href="{{ url_for('dashboard') }}">Back to dashboard</a></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  function quick(q){ document.getElementById('q').value = q; ask(); }
+
+  async function ask() {
+    const q = document.getElementById('q').value.trim();
+    const ans = document.getElementById('answer');
+    const res = document.getElementById('results');
+    if (!q) return;
+    ans.innerHTML = '<div class="answer">Searching…</div>';
+    res.innerHTML = '';
+    try {
+      const r = await fetch('{{ url_for("api_help_ask") }}', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({query: q})});
+      const data = await r.json();
+      const srcLabel = {web:'web search', local:'local knowledge base',
+                        offline:'offline knowledge base'}[data.source] || data.source;
+      ans.innerHTML = '<div class="answer"><span class="src ' + data.source + '">' +
+        srcLabel + (data.online ? ' (online)' : ' (offline)') + '</span><br><br>' +
+        escapeHtml(data.answer) + '</div>';
+      if (data.results && data.results.length) {
+        res.innerHTML = '<h3 style="font-size:14px;color:var(--accent);">Sources</h3>' +
+          data.results.map(x =>
+            '<div class="result"><a href="' + x.url + '" target="_blank" rel="noopener">' +
+            escapeHtml(x.title || x.url) + '</a><div class="snip">' +
+            escapeHtml(x.snippet || '') + '</div></div>').join('');
+      }
+    } catch (e) {
+      ans.innerHTML = '<div class="answer">Request failed. Please try again.</div>';
+    }
+  }
+  function escapeHtml(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+{% endblock %}
