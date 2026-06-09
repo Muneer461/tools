@@ -63,3 +63,49 @@ def test_actual_install_sh_exists_and_executable():
     content = install.read_text(encoding="utf-8")
     assert content.startswith("#!/usr/bin/env bash")
     assert "zorksec-launch.sh" in content
+
+
+
+def test_committed_install_sh_is_in_sync_with_source():
+    """Guard against a STALE installer: every embedded blob must byte-match the
+    current source tree. A drift here means `python build_installer.py` was not
+    re-run after changing source/templates/static assets - the exact failure
+    class behind 'the deployed Kali instance behaves differently from the repo'.
+    """
+    import hashlib
+
+    builder = _load_builder()
+    installer = (ROOT / "install.sh").read_text(encoding="utf-8")
+    embedded = dict(re.findall(
+        r'write_file "([^"]+)" "([A-Za-z0-9+/=]+)"', installer))
+
+    # 1. The set of embedded files must equal what the builder would embed now.
+    expected = {p.relative_to(ROOT).as_posix() for p in builder.iter_files()}
+    assert set(embedded) == expected, (
+        "install.sh embeds a different file set than the source tree; "
+        "re-run: python build_installer.py")
+
+    # 2. Each embedded blob must byte-match the file on disk.
+    stale = []
+    for rel, blob in embedded.items():
+        disk = (ROOT / rel).read_bytes()
+        if hashlib.sha256(base64.b64decode(blob)).digest() != hashlib.sha256(disk).digest():
+            stale.append(rel)
+    assert not stale, f"install.sh is stale for: {stale}; re-run build_installer.py"
+
+
+def test_frontend_assets_are_vendored_offline():
+    """The terminal/icon assets must be bundled (no CDN) so an air-gapped Kali
+    lab renders the dashboard and opens the in-browser terminal."""
+    static = ROOT / "zorksec" / "web" / "static" / "vendor"
+    for rel in ("xterm.min.js", "xterm.min.css", "xterm-addon-fit.min.js",
+                "socket.io.min.js", "fontawesome/css/all.min.css"):
+        assert (static / rel).exists(), f"missing vendored asset: {rel}"
+
+    # No template may reference an external CDN for these critical assets.
+    templates = ROOT / "zorksec" / "web" / "templates"
+    for tpl in templates.glob("*.html"):
+        text = tpl.read_text(encoding="utf-8")
+        assert "cdn.jsdelivr.net" not in text, f"{tpl.name} still uses jsdelivr CDN"
+        assert "cdn.socket.io" not in text, f"{tpl.name} still uses socket.io CDN"
+        assert "cdnjs.cloudflare.com" not in text, f"{tpl.name} still uses cdnjs CDN"

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}ZorkSec - Error {{ code }}{% endblock %}
+{% block body %}
+<div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px;">
+  <div class="panel" style="max-width: 520px; text-align: center;">
+    <div style="font-family: 'Orbitron', monospace; font-size: 72px; font-weight: 900;
+                background: linear-gradient(135deg, var(--purple-primary, #805aff), var(--cyan-primary, #00d4ff));
+                -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">
+      {{ code }}
+    </div>
+    <h2 style="margin: 6px 0 10px;">{{ title }}</h2>
+    <p style="color: var(--muted, #8888aa); font-size: 14px; line-height: 1.6;">{{ message }}</p>
+    {% if ref %}
+    <p style="color: var(--text-muted, #555577); font-size: 12px; font-family: monospace; margin-top: 10px;">
+      Reference: {{ ref }}
+    </p>
+    {% endif %}
+    <div style="margin-top: 22px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+      <a class="header-btn" href="{{ url_for('dashboard') }}" style="padding: 10px 18px;">
+        <i class="fas fa-house"></i> Dashboard
+      </a>
+      <a class="header-btn" href="{{ url_for('login') }}" style="padding: 10px 18px;">
+        <i class="fas fa-right-to-bracket"></i> Login
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}

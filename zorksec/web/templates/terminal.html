@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}ZorkSec Terminal - {{ title }}{% endblock %}
 {% block head %}
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/xterm.min.css') }}">
 <style>
   body { background: #000; margin: 0; }
   .term-head {
@@ -36,9 +36,9 @@
 <div id="term"></div>
 {% endblock %}
 {% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
-<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script src="{{ url_for('static', filename='vendor/xterm.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/xterm-addon-fit.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/socket.io.min.js') }}"></script>
 <script>
   // ---- helpers ---------------------------------------------------------
   function setStatus(html) { document.getElementById('status').innerHTML = html; }
@@ -59,12 +59,13 @@
   if (missing.length) {
     fatal(
       '<b>Terminal libraries failed to load:</b> ' + missing.join(', ') + '.<br>' +
-      'This usually means the browser could not reach the internet/CDN.<br><br>' +
+      'These are served locally by ZorkSec, so this usually means the install ' +
+      'is incomplete or a browser extension blocked the scripts.<br><br>' +
       '<b>Fixes:</b><br>' +
-      '&bull; Connect this machine to the internet and reload, or<br>' +
+      '&bull; Hard-reload the page (Ctrl+Shift+R) to clear cached assets, or<br>' +
+      '&bull; Re-run <code>sudo bash install.sh</code> to restore static files, or<br>' +
       '&bull; Use the <b>Native Kali terminal</b> option from the dashboard ' +
-      'Run menu instead (works fully offline), or<br>' +
-      '&bull; Run the tool directly in your own terminal.'
+      'Run menu instead (works fully offline).'
     );
   } else {
     bootTerminal();

@@ -26,7 +26,7 @@ def _configure_sqlite(dbapi_connection, _connection_record) -> None:
     """Apply pragmas on every new SQLite connection (WAL + busy timeout)."""
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA journal_mode=WAL;")
-    cursor.execute("PRAGMA busy_timeout=5000;")
+    cursor.execute("PRAGMA busy_timeout=15000;")
     cursor.execute("PRAGMA foreign_keys=ON;")
     cursor.close()
 

@@ -131,6 +131,15 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
     # Make ``csrf_token()`` callable from every template.
     app.jinja_env.globals["csrf_token"] = _csrf_token
 
+    # Cache-busting stamp for static assets: derived from the CSS file's mtime
+    # so a stale browser cache can never keep serving an old stylesheet/JS
+    # after an upgrade (a real cause of "the new UI didn't take effect").
+    try:
+        _css_path = os.path.join(app.static_folder or "", "zorksec.css")
+        app.jinja_env.globals["asset_v"] = str(int(os.path.getmtime(_css_path)))
+    except OSError:
+        app.jinja_env.globals["asset_v"] = "1"
+
     def _csrf_enabled() -> bool:
         return bool(app.config.get("CSRF_ENABLED", True))
 
@@ -206,23 +215,36 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
     @_login_required
     def change_password():
         error = None
+        must_change = bool(flask_session.get("must_change_password"))
         if request.method == "POST":
             old = request.form.get("old_password", "")
             new = request.form.get("new_password", "")
             confirm = request.form.get("confirm_password", "")
+            question = request.form.get("question", "")
+            answer = request.form.get("answer", "")
             if new != confirm:
                 error = "New passwords do not match."
+            elif must_change and (not question.strip() or not answer.strip()):
+                # First-login wizard: a recovery question is mandatory so the
+                # account is never left without a way to self-recover.
+                error = "Set a recovery question and answer to finish setup."
             else:
-                with session_scope(settings) as db:
-                    try:
-                        AuthService(db, settings).change_password(
-                            flask_session["username"], old, new
-                        )
-                        flask_session["must_change_password"] = False
-                        return redirect(url_for("dashboard"))
-                    except AuthError as exc:
-                        error = str(exc)
-        return render_template("change_password.html", error=error, theme=theme())
+                try:
+                    # Both writes share one transaction: if the security
+                    # question is rejected, the password change rolls back too,
+                    # so the account is never left half-provisioned.
+                    with session_scope(settings) as db:
+                        auth = AuthService(db, settings)
+                        auth.change_password(flask_session["username"], old, new)
+                        if must_change or question.strip() or answer.strip():
+                            auth.set_security_question(
+                                flask_session["username"], question, answer)
+                    flask_session["must_change_password"] = False
+                    return redirect(url_for("dashboard"))
+                except AuthError as exc:
+                    error = str(exc)
+        return render_template("change_password.html", error=error, theme=theme(),
+                               must_change=must_change)
 
     # ------------------------------------------------------------------ password recovery
     @app.route("/forgot-password", methods=["GET", "POST"])
@@ -724,6 +746,62 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
                 notes=data.get("notes", ""),
             )
             return {"id": vm.id, "safe": check.ok, "message": check.message}
+
+    # ------------------------------------------------------------------ errors
+    def _render_error(code: int, title: str, message: str, ref: str | None = None):
+        """Render the themed error page, falling back to plain text if Jinja fails."""
+        try:
+            html = render_template(
+                "error.html", code=code, title=title, message=message,
+                ref=ref, theme=theme(),
+            )
+            return html, code
+        except Exception:  # pragma: no cover - last-resort fallback
+            return f"{code} {title}: {message}", code
+
+    @app.errorhandler(400)
+    def _err_400(exc):
+        desc = getattr(exc, "description", "") or "The request could not be processed."
+        return _render_error(400, "Bad Request", desc)
+
+    @app.errorhandler(403)
+    def _err_403(exc):
+        return _render_error(
+            403, "Forbidden",
+            "You do not have permission to access this resource.")
+
+    @app.errorhandler(404)
+    def _err_404(exc):
+        return _render_error(
+            404, "Page Not Found",
+            "The page you requested does not exist. Check the address or head "
+            "back to the dashboard.")
+
+    @app.errorhandler(500)
+    def _err_500(exc):
+        # Log the full stack trace so raw 500s never leak to the browser while
+        # operators still get the detail they need to debug.
+        ref = secrets.token_hex(4)
+        logger.exception("Internal server error [ref=%s]: %s", ref, exc)
+        return _render_error(
+            500, "Internal Server Error",
+            "Something went wrong on the server. The error has been logged; "
+            "quote the reference below if you report it.", ref=ref)
+
+    @app.errorhandler(Exception)
+    def _err_unhandled(exc):
+        # Let Werkzeug HTTP exceptions (404/403/abort) flow to their own
+        # handlers; only truly unexpected exceptions are turned into a 500.
+        from werkzeug.exceptions import HTTPException
+
+        if isinstance(exc, HTTPException):
+            return exc
+        ref = secrets.token_hex(4)
+        logger.exception("Unhandled exception [ref=%s]", ref)
+        return _render_error(
+            500, "Internal Server Error",
+            "Something went wrong on the server. The error has been logged; "
+            "quote the reference below if you report it.", ref=ref)
 
     # ------------------------------------------------------------------ socket
     @socketio.on("connect")

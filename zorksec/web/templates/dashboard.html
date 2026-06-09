@@ -1,7 +1,6 @@
 {% extends "base.html" %}
 {% block title %}ZorkSec - Cybersecurity Analysis Platform L1{% endblock %}
 {% block head %}
-<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
 {% endblock %}
 {% block body %}
 <!-- ===== Header ===== -->
@@ -59,6 +58,7 @@
     <nav class="sidebar-nav">
       <div class="section-label">Categories</div>
       <button class="nav-item active" data-cat="__all__"><i class="fas fa-th-large"></i> All tools</button>
+      <button class="nav-item" data-cat="__installed__"><i class="fas fa-check-circle"></i> Installed tools</button>
       {% for c in categories %}
       <button class="nav-item" data-cat="{{ c }}"><i class="fas fa-folder"></i> {{ c }}</button>
       {% endfor %}
@@ -90,7 +90,7 @@
         <div class="stat-value">{{ tool_count }}</div>
         <div class="stat-label">Catalog Tools</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card" id="installed-stat" style="cursor:pointer;" title="Show installed tools">
         <div class="stat-icon green"><i class="fas fa-check-circle"></i></div>
         <div class="stat-value">{{ installed_count }}</div>
         <div class="stat-label">Installed</div>
@@ -131,7 +131,7 @@
     <div class="section-title"><h3><i class="fas fa-tools"></i> Cybersecurity Tools</h3></div>
     <div class="tools-grid" id="tool-grid">
       {% for t in tools %}
-      <div class="tool-card" data-cat="{{ t.category }}">
+      <div class="tool-card" data-cat="{{ t.category }}" data-installed="{{ '1' if t.installed else '0' }}">
         <div class="tool-header">
           <div><div class="tool-name">{{ t.name }}</div></div>
           <div class="tool-logo"><i class="fas fa-shield-halved"></i></div>
@@ -151,8 +151,9 @@
       </div>
       {% endfor %}
     </div>
-
-    <!-- Run-options modal -->
+    <div id="tool-empty" style="display:none; color:var(--text-muted); padding:18px 4px; font-size:14px;">
+      No tools match this filter yet. Install a tool with the <b>Install</b> button, then it will appear under <b>Installed tools</b>.
+    </div>
     <div id="run-modal" class="modal-overlay">
       <div class="modal">
         <h3 id="run-modal-title">Run tool</h3>
@@ -189,16 +190,32 @@
   function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
 
   // Category filtering (real categories from the sidebar).
-  document.querySelectorAll('.sidebar .nav-item[data-cat]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.sidebar .nav-item[data-cat]').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const cat = btn.dataset.cat;
-      document.querySelectorAll('#tool-grid .tool-card').forEach(card => {
-        card.style.display = (cat === '__all__' || card.dataset.cat === cat) ? '' : 'none';
-      });
+  function applyFilter(cat) {
+    document.querySelectorAll('.sidebar .nav-item[data-cat]').forEach(b =>
+      b.classList.toggle('active', b.dataset.cat === cat));
+    let shown = 0;
+    document.querySelectorAll('#tool-grid .tool-card').forEach(card => {
+      let visible;
+      if (cat === '__all__') visible = true;
+      else if (cat === '__installed__') visible = card.dataset.installed === '1';
+      else visible = card.dataset.cat === cat;
+      card.style.display = visible ? '' : 'none';
+      if (visible) shown++;
     });
+    const empty = document.getElementById('tool-empty');
+    if (empty) empty.style.display = (shown === 0) ? '' : 'none';
+  }
+  document.querySelectorAll('.sidebar .nav-item[data-cat]').forEach(btn => {
+    btn.addEventListener('click', () => applyFilter(btn.dataset.cat));
   });
+  // Clicking the "Installed" stat card jumps to the installed-tools filter.
+  const installedStat = document.getElementById('installed-stat');
+  if (installedStat) {
+    installedStat.addEventListener('click', () => {
+      applyFilter('__installed__');
+      document.getElementById('tool-grid').scrollIntoView({behavior: 'smooth', block: 'start'});
+    });
+  }
 
   function openTab(url) {
     const win = window.open(url, '_blank');

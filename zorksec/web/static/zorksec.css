@@ -124,6 +124,11 @@ a:hover { text-shadow: 0 0 10px rgba(0,212,255,0.4); }
   border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: var(--text-primary);
   font-size: 13px; font-family: 'JetBrains Mono', monospace; cursor: pointer; outline: none; }
 .sidebar-env select:focus { border-color: var(--purple-primary); }
+/* Force a solid dark popup so the option list is never white-on-white on
+   platforms (Linux/GTK, some Chrome builds) that ignore the control colour
+   for the native dropdown. */
+.sidebar-env select option,
+select option { background: #0d0d24; color: var(--text-primary); }
 .sidebar-nav { flex: 1; padding: 8px; }
 .section-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px;
   color: var(--text-muted); padding: 12px 12px 6px; }

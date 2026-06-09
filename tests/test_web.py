@@ -55,6 +55,8 @@ def test_change_password_unlocks_dashboard(client):
         "old_password": "zorksec",
         "new_password": "StrongPass1!",
         "confirm_password": "StrongPass1!",
+        "question": "First pet?",
+        "answer": "fluffy",
     })
     assert resp.status_code == 302
     dash = client.get("/")
@@ -70,7 +72,8 @@ def _login_full(client):
     client.post("/login", data={"username": "zorksec", "password": "zorksec"})
     client.post("/change-password", data={
         "old_password": "zorksec", "new_password": "StrongPass1!",
-        "confirm_password": "StrongPass1!"})
+        "confirm_password": "StrongPass1!",
+        "question": "First pet?", "answer": "fluffy"})
 
 
 def test_api_tools_returns_catalog(client):
@@ -366,7 +369,8 @@ def test_socketio_allows_authenticated_connection(zorksec_home):
     flask_client.post("/login", data={"username": "zorksec", "password": "zorksec"})
     flask_client.post("/change-password", data={
         "old_password": "zorksec", "new_password": "StrongPass1!",
-        "confirm_password": "StrongPass1!"})
+        "confirm_password": "StrongPass1!",
+        "question": "First pet?", "answer": "fluffy"})
     sio_client = socketio.test_client(app, flask_test_client=flask_client)
     assert sio_client.is_connected() is True
     sio_client.disconnect()
@@ -419,3 +423,76 @@ def test_api_soc_integrations(client):
     _login_full(client)
     data = client.get("/api/soc/integrations").get_json()
     assert "cyberchef" in data
+
+
+
+# ---------------------------------------------------------------------------
+# Audit remediation: error pages, offline assets, installed filter, wizard
+# ---------------------------------------------------------------------------
+def test_404_returns_themed_error_page(client):
+    resp = client.get("/no-such-page")
+    body = resp.get_data(as_text=True)
+    assert resp.status_code == 404
+    # Themed page (not the default Flask/Werkzeug page).
+    assert "Page Not Found" in body
+    assert "ZorkSec" in body
+
+
+def test_first_login_requires_recovery_question(client):
+    """Phase 7 wizard: the forced first change must capture a recovery Q&A."""
+    client.post("/login", data={"username": "zorksec", "password": "zorksec"})
+    # Missing question/answer -> stays on change-password with an error, and the
+    # dashboard remains locked.
+    resp = client.post("/change-password", data={
+        "old_password": "zorksec", "new_password": "StrongPass1!",
+        "confirm_password": "StrongPass1!"})
+    assert resp.status_code == 200
+    assert "recovery question" in resp.get_data(as_text=True).lower()
+    assert client.get("/").status_code == 302  # still locked
+
+
+def test_first_login_wizard_sets_recoverable_question(client):
+    """After the wizard, the account can be recovered with the chosen answer."""
+    client.post("/login", data={"username": "zorksec", "password": "zorksec"})
+    client.post("/change-password", data={
+        "old_password": "zorksec", "new_password": "StrongPass1!",
+        "confirm_password": "StrongPass1!",
+        "question": "City of birth?", "answer": "Hyderabad"})
+    client.get("/logout")
+    step1 = client.post("/forgot-password", data={"username": "zorksec"})
+    assert "City of birth?" in step1.get_data(as_text=True)
+
+
+def test_dashboard_has_installed_filter_and_data_attr(client):
+    _login_full(client)
+    body = client.get("/").get_data(as_text=True)
+    # Sidebar filter for installed tools.
+    assert 'data-cat="__installed__"' in body
+    # Tool cards expose their installed state for client-side filtering.
+    assert "data-installed=" in body
+
+
+def test_terminal_assets_served_locally_not_cdn(client):
+    """The in-browser terminal must not depend on a CDN (offline Kali labs)."""
+    _login_full(client)
+    body = client.get("/terminal?tool=nmap&action=run").get_data(as_text=True)
+    assert "cdn.jsdelivr.net" not in body
+    assert "cdn.socket.io" not in body
+    assert "vendor/xterm.min.js" in body
+    assert "vendor/socket.io.min.js" in body
+
+
+def test_vendored_static_assets_exist_and_serve(client):
+    for path in ("/static/vendor/xterm.min.js",
+                 "/static/vendor/socket.io.min.js",
+                 "/static/vendor/xterm-addon-fit.min.js",
+                 "/static/vendor/xterm.min.css",
+                 "/static/vendor/fontawesome/css/all.min.css"):
+        resp = client.get(path)
+        assert resp.status_code == 200, f"{path} -> {resp.status_code}"
+
+
+def test_base_assets_are_cache_busted(client):
+    _login_full(client)
+    body = client.get("/").get_data(as_text=True)
+    assert "zorksec.css?v=" in body

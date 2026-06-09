@@ -283,7 +283,6 @@ class KaliDiagnosticsService:
         home = real_home()
         important = [home / ".local" / "bin", home / "go" / "bin",
                      home / ".cargo" / "bin"]
-        current = augmented_path().split(os.pathsep)
         # Only flag dirs that exist but are not exported on the *real* PATH.
         real_path = os.environ.get("PATH", "").split(os.pathsep)
         missing = [str(p) for p in important if p.is_dir() and str(p) not in real_path]
