@@ -496,3 +496,52 @@ def test_base_assets_are_cache_busted(client):
     _login_full(client)
     body = client.get("/").get_data(as_text=True)
     assert "zorksec.css?v=" in body
+
+
+
+# ---------------------------------------------------------------------------
+# Event-handler robustness: external JS + delegation (no inline onclick)
+# ---------------------------------------------------------------------------
+def test_dashboard_uses_external_js_and_delegation(client):
+    _login_full(client)
+    body = client.get("/").get_data(as_text=True)
+    # Logic moved to an external, cache-busted file.
+    assert "static/dashboard.js?v=" in body
+    # Buttons use data-action (delegation), not fragile inline onclick.
+    assert 'data-action="tool-install"' in body
+    assert 'data-action="tool-run"' in body
+    assert 'data-action="tool-docs"' in body
+    assert "onclick=" not in body, "dashboard must not rely on inline onclick handlers"
+
+
+def test_shared_ui_safety_net_loaded_everywhere(client):
+    _login_full(client)
+    for route in ("/", "/diagnostics", "/kali-diagnostics", "/lab", "/help"):
+        body = client.get(route).get_data(as_text=True)
+        assert "static/zorksec-ui.js?v=" in body, f"{route} missing shared UI script"
+
+
+def test_kali_diagnostics_uses_external_js_and_endpoints(client):
+    _login_full(client)
+    body = client.get("/kali-diagnostics").get_data(as_text=True)
+    assert "static/kali_diagnostics.js?v=" in body
+    assert 'data-action="kali-scan"' in body
+    assert 'data-scan-url=' in body and 'data-repair-url=' in body
+    assert "onclick=" not in body
+
+
+def test_new_js_assets_serve(client):
+    for path in ("/static/zorksec-ui.js", "/static/dashboard.js",
+                 "/static/kali_diagnostics.js", "/static/diagnostics.js"):
+        resp = client.get(path)
+        assert resp.status_code == 200, f"{path} -> {resp.status_code}"
+        assert resp.headers["Content-Type"].startswith(
+            ("application/javascript", "text/javascript"))
+
+
+def test_diagnostic_center_uses_external_js(client):
+    _login_full(client)
+    body = client.get("/diagnostics").get_data(as_text=True)
+    assert "static/diagnostics.js?v=" in body
+    assert 'data-action="diag-run"' in body
+    assert "onclick=" not in body

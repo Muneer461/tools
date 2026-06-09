@@ -19,6 +19,7 @@
 </head>
 <body>
   {% block body %}{% endblock %}
+  <script src="{{ url_for('static', filename='zorksec-ui.js') }}?v={{ asset_v }}"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>
