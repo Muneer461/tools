@@ -270,7 +270,6 @@ def test_run_target_headless_falls_back(client, monkeypatch):
 # ---------------------------------------------------------------------------
 import re as _re
 
-from flask_socketio import SocketIO
 
 
 @pytest.fixture()

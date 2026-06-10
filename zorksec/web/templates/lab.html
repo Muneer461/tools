@@ -1,84 +1,104 @@
 {% extends "base.html" %}
 {% block title %}ZorkSec - Build My Lab{% endblock %}
 {% block body %}
-<div class="layout">
-  <aside class="sidebar">
-    <h1>ZorkSec</h1>
-    <div class="sub">Build My Lab</div>
-    <a class="cat" href="{{ url_for('dashboard') }}">← Back to dashboard</a>
-    <a class="cat" href="{{ url_for('logout') }}">Logout</a>
-  </aside>
-  <main class="main">
-    <h2>Build a safe practice lab</h2>
-    <div class="warn-box" style="margin-bottom:18px;">
-      <b>Golden rule:</b> vulnerable practice VMs must use a <b>Host-Only</b> or
-      <b>Internal</b> network. Never bridge a vulnerable machine to your home/work
-      network or the internet. Always snapshot before you practice.
+<!-- ===== Header ===== -->
+<header class="header">
+  <div class="header-left">
+    <div class="header-logo">
+      <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs><linearGradient id="hg" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" style="stop-color:#805aff"/><stop offset="100%" style="stop-color:#00d4ff"/>
+        </linearGradient></defs>
+        <path d="M20 3L5 11V22c0 10 6 16 15 18 9-2 15-8 15-18V11L20 3z" fill="url(#hg)" opacity="0.2" stroke="url(#hg)" stroke-width="1.5"/>
+        <text x="20" y="26" text-anchor="middle" fill="white" font-family="Orbitron, sans-serif" font-size="14" font-weight="900">Z</text>
+      </svg>
+      <h2>ZORKSEC</h2>
     </div>
+  </div>
+  <div class="header-right">
+    <div class="header-status"><div class="dot"></div> BUILD MY LAB</div>
+    <div class="header-actions">
+      <a class="header-btn" href="{{ url_for('dashboard') }}" title="Back to dashboard"><i class="fas fa-house"></i></a>
+      <a class="header-btn" href="{{ url_for('logout') }}" title="Logout"><i class="fas fa-sign-out-alt"></i></a>
+    </div>
+  </div>
+</header>
 
-    <div class="panel">
-      <h2>Step 1 &mdash; Choose a hypervisor</h2>
-      <div class="grid">
-        {% for h in hypervisors %}
-        <div class="tool">
-          <h3>{{ h.name }}</h3>
-          <div class="note">{{ h.note }}</div>
-          <a class="badge" href="{{ h.url }}" target="_blank">Download</a>
+<main class="main-content">
+  <div class="section-title"><h3><i class="fas fa-flask"></i> Build a safe practice lab</h3></div>
+
+  <div class="warn-box" style="margin-bottom:18px;">
+    <b>Golden rule:</b> vulnerable practice VMs must use a <b>Host-Only</b> or
+    <b>Internal</b> network. Never bridge a vulnerable machine to your home/work
+    network or the internet. Always snapshot before you practice.
+  </div>
+
+  <!-- ===== Step 1: hypervisor ===== -->
+  <div class="panel">
+    <div class="panel-header"><h4><i class="fas fa-server"></i> Step 1 &mdash; Choose a hypervisor</h4></div>
+    <div class="tools-grid">
+      {% for h in hypervisors %}
+      <div class="tool-card">
+        <div class="tool-header">
+          <div><div class="tool-name">{{ h.name }}</div></div>
+          <div class="tool-logo"><i class="fas fa-server"></i></div>
         </div>
-        {% endfor %}
-      </div>
-    </div>
-
-    <div class="panel">
-      <h2>Step 2 &mdash; Add VMs</h2>
-      <div class="grid">
-        {% for t in templates %}
-        <div class="tool">
-          <h3>{{ t.name }}</h3>
-          <div class="row">
-            <span class="badge {{ 'both' if t.role=='analyst' else 'red' }}">{{ t.role }}</span>
-          </div>
-          <div class="note">{{ t.beginner_note }}</div>
-          <a class="badge" href="{{ t.download }}" target="_blank">Get image</a>
-          <div class="actions">
-            <button onclick="addVm('{{ t.name }}', '{{ t.role }}')">Add to my lab</button>
-          </div>
+        <div class="tool-desc">{{ h.note }}</div>
+        <div class="tool-actions">
+          <a class="tool-btn install" href="{{ h.url }}" target="_blank" rel="noopener">Download</a>
         </div>
-        {% endfor %}
       </div>
+      {% endfor %}
     </div>
+  </div>
 
-    <div class="panel">
-      <h2>Step 3 &mdash; My planned lab</h2>
-      <div id="vm-msg"></div>
-      <table id="vm-table">
+  <!-- ===== Step 2: add VMs ===== -->
+  <div class="panel">
+    <div class="panel-header"><h4><i class="fas fa-desktop"></i> Step 2 &mdash; Add VMs</h4></div>
+    <div class="tools-grid">
+      {% for t in templates %}
+      <div class="tool-card">
+        <div class="tool-header">
+          <div><div class="tool-name">{{ t.name }}</div></div>
+          <div class="tool-logo"><i class="fas {{ 'fa-user-shield' if t.role == 'analyst' else 'fa-bug' }}"></i></div>
+        </div>
+        <div class="tool-badges">
+          <span class="tool-badge {{ 'both' if t.role == 'analyst' else 'red' }}">{{ t.role }}</span>
+        </div>
+        <div class="tool-desc">{{ t.beginner_note }}</div>
+        <div class="tool-actions">
+          <a class="tool-btn docs" href="{{ t.download }}" target="_blank" rel="noopener">Get image</a>
+          <button class="tool-btn run" data-action="add-vm"
+                  data-name="{{ t.name }}" data-role="{{ t.role }}">Add to my lab</button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- ===== Step 3: planned lab ===== -->
+  <div class="panel">
+    <div class="panel-header"><h4><i class="fas fa-diagram-project"></i> Step 3 &mdash; My planned lab</h4></div>
+    <div id="vm-msg" style="margin-bottom:12px;"></div>
+    <table id="vm-table">
+      <thead>
         <tr><th>Name</th><th>Role</th><th>Hypervisor</th><th>Network</th><th>Safe?</th></tr>
+      </thead>
+      <tbody id="vm-body">
         {% for v in vms %}
         <tr>
           <td>{{ v.name }}</td><td>{{ v.role }}</td><td>{{ v.hypervisor }}</td>
           <td>{{ v.network }}</td>
-          <td>{% if v.isolated %}<span class="badge ok">isolated</span>{% else %}<span class="badge deprecated">unsafe</span>{% endif %}</td>
+          <td>{% if v.isolated %}<span class="tool-badge ok">isolated</span>{% else %}<span class="tool-badge deprecated">unsafe</span>{% endif %}</td>
         </tr>
+        {% else %}
+        <tr id="vm-empty"><td colspan="5" style="color:var(--text-muted);">No VMs planned yet. Add one from Step 2.</td></tr>
         {% endfor %}
-      </table>
-    </div>
-  </main>
-</div>
+      </tbody>
+    </table>
+  </div>
+</main>
 {% endblock %}
 {% block scripts %}
-<script>
-  async function addVm(name, role) {
-    const network = role === 'target' ? 'hostonly' : 'nat';
-    const r = await fetch('/api/lab/vm', {method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({name, role, hypervisor: 'virtualbox', network_mode: network})});
-    const data = await r.json();
-    const msg = document.getElementById('vm-msg');
-    msg.className = data.safe ? 'ok-box' : 'warn-box';
-    msg.textContent = data.message;
-    const table = document.getElementById('vm-table');
-    const row = table.insertRow(-1);
-    row.innerHTML = `<td>${name}</td><td>${role}</td><td>virtualbox</td><td>${network}</td>` +
-      `<td>${data.safe ? '<span class="badge ok">isolated</span>' : '<span class="badge deprecated">unsafe</span>'}</td>`;
-  }
-</script>
+<script src="{{ url_for('static', filename='lab.js') }}?v={{ asset_v }}"></script>
 {% endblock %}
