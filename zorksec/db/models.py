@@ -45,6 +45,8 @@ class User(Base):
     # Password recovery: security question + bcrypt-hashed answer (optional).
     security_question: Mapped[str | None] = mapped_column(String(255), nullable=True)
     security_answer_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # UI team theme preference (blue|red|both); persists across login/restart.
+    team: Mapped[str] = mapped_column(String(16), default="both", nullable=False)
     # Password-recovery throttling (security-question reset flow).
     recovery_failed_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     recovery_locked_until: Mapped[_dt.datetime | None] = mapped_column(DateTime, nullable=True)
