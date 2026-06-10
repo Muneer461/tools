@@ -27,7 +27,8 @@
      data-run-url="{{ url_for('api_diagnostics') }}"
      data-repair-url="{{ url_for('api_diagnostics_repair') }}"
      data-guide-url="{{ url_for('api_diagnostics_guide') }}"
-     data-export-url="{{ url_for('api_diagnostics_export') }}">
+     data-export-url="{{ url_for('api_diagnostics_export') }}"
+     data-download-url="{{ url_for('api_diagnostics_download') }}">
   <h1 style="color: var(--accent);">Diagnostic Center</h1>
   <p class="meta">Full system diagnostic, auto-repair, root-cause analysis, and
      exportable reports. Auto-repair runs only safe, non-interactive commands.</p>
@@ -37,12 +38,14 @@
     <button data-action="diag-repair">Auto Repair</button>
     <button data-action="diag-guide">Manual Repair Guide</button>
     <select id="fmt">
-      <option value="markdown">Markdown</option>
-      <option value="html">HTML</option>
       <option value="json">JSON</option>
       <option value="csv">CSV</option>
+      <option value="txt">TXT</option>
+      <option value="html">HTML</option>
+      <option value="markdown">Markdown</option>
     </select>
-    <button data-action="diag-export">Export Report</button>
+    <button data-action="diag-download">Download Report</button>
+    <button data-action="diag-export">Save on Server</button>
     <a href="{{ url_for('dashboard') }}" style="margin-left:auto; align-self:center;">Back</a>
   </div>
 

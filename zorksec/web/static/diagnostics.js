@@ -10,6 +10,7 @@
   var REPAIR_URL = root.dataset.repairUrl;
   var GUIDE_URL = root.dataset.guideUrl;
   var EXPORT_URL = root.dataset.exportUrl;
+  var DOWNLOAD_URL = root.dataset.downloadUrl;
 
   function setStatus(m) { document.getElementById("status").textContent = m; }
   function badge(s) { return '<span class="badge ' + s + '">' + s.toUpperCase() + "</span>"; }
@@ -82,6 +83,34 @@
     }
   }
 
+  // Stream the report from the server and save it to the user's device.
+  async function downloadReport() {
+    var fmt = (document.getElementById("fmt") || {}).value || "json";
+    setStatus("Preparing " + fmt.toUpperCase() + " download...");
+    try {
+      var r = await fetch(DOWNLOAD_URL + "?format=" + encodeURIComponent(fmt));
+      if (!r.ok) {
+        var err = "";
+        try { err = (await r.json()).error || ""; } catch (e) { err = "HTTP " + r.status; }
+        setStatus("Download failed: " + err);
+        return;
+      }
+      var blob = await r.blob();
+      var name = "zorksec-diagnostic." + (fmt === "markdown" ? "md" : fmt);
+      var cd = r.headers.get("Content-Disposition") || "";
+      var m = /filename="?([^"]+)"?/.exec(cd);
+      if (m) name = m[1];
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url; a.download = name;
+      document.body.appendChild(a); a.click();
+      a.remove(); URL.revokeObjectURL(url);
+      setStatus("Downloaded " + name + " (" + blob.size + " bytes).");
+    } catch (e) {
+      setStatus("Download failed: " + (e && e.message ? e.message : e));
+    }
+  }
+
   document.addEventListener("click", function (ev) {
     var el = ev.target.closest ? ev.target.closest("[data-action]") : null;
     if (!el) return;
@@ -90,6 +119,7 @@
       case "diag-repair": autoRepair(); break;
       case "diag-guide": loadGuide(); break;
       case "diag-export": exportReport(); break;
+      case "diag-download": downloadReport(); break;
       default: break;
     }
   });
