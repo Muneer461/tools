@@ -110,10 +110,28 @@ TROUBLESHOOTING
 * Reset everything: sudo rm -rf /opt/zorksec, then re-run sudo ./install.sh.
 
 --------------------------------------------------------------
-UNINSTALL
+UNINSTALL (remove everything for a clean re-install)
 --------------------------------------------------------------
+One-click (recommended) - stops the server, removes the install dir
+(database with your username/password, keys, logs, venv), the global
+commands, and any legacy copies, then verifies the result:
+
+    cd tools
+    sudo ./uninstall.sh          # asks to confirm
+    sudo ./uninstall.sh -y       # no prompt
+    sudo ./uninstall.sh -n       # dry run (show, change nothing)
+
+Manual equivalent:
+    sudo pkill -f 'zorksec.cli' 2>/dev/null || true
     sudo rm -rf /opt/zorksec
     sudo rm -f /usr/local/bin/zorksec /usr/local/bin/tools
+    sudo rm -rf ~/.zorksec /root/.zorksec
+    rm -f ~/.local/bin/zorksec ~/.local/bin/tools
+    hash -r
+
+Verify it is gone:
+    which zorksec tools     # prints nothing
+    ls /opt/zorksec         # No such file or directory
 
 ==============================================================
  Stay curious, practice safely, and happy hunting.  - Zork
