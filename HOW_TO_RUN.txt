@@ -110,10 +110,34 @@ TROUBLESHOOTING
 * Reset everything: sudo rm -rf /opt/zorksec, then re-run sudo ./install.sh.
 
 --------------------------------------------------------------
-UNINSTALL
+MANAGE / UPDATE / REINSTALL / UNINSTALL
 --------------------------------------------------------------
+Use the all-in-one maintenance script (shows a ZorkSec banner + menu):
+
+    cd tools
+    sudo ./manage.sh
+
+Menu options:
+    1) Update ZorkSec      - keep your data; pull latest + reinstall code
+    2) Reinstall A to Z    - remove EVERYTHING, then a clean fresh install
+    3) Remove completely   - wipe all data, keys & commands from the system
+
+Run an option directly (non-interactive):
+    sudo ./manage.sh update
+    sudo ./manage.sh reinstall
+    sudo ./manage.sh remove          # add -y to skip the prompt, -n for dry run
+
+Manual removal (if you prefer not to use manage.sh):
+    sudo pkill -f 'zorksec.cli' 2>/dev/null || true
     sudo rm -rf /opt/zorksec
     sudo rm -f /usr/local/bin/zorksec /usr/local/bin/tools
+    sudo rm -rf ~/.zorksec /root/.zorksec
+    rm -f ~/.local/bin/zorksec ~/.local/bin/tools
+    hash -r
+
+Verify it is gone:
+    which zorksec tools     # prints nothing
+    ls /opt/zorksec         # No such file or directory
 
 ==============================================================
  Stay curious, practice safely, and happy hunting.  - Zork

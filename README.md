@@ -20,9 +20,10 @@ Center learning toolkit for **Kali / Parrot / Ubuntu** labs.
 9. [CLI Commands](#cli-commands)
 10. [Diagnostics & Help](#diagnostics--help)
 11. [Troubleshooting](#troubleshooting)
-12. [Uninstall](#uninstall)
-13. [Security Notes](#security-notes)
-14. [License & Disclaimer](#license--disclaimer)
+12. [Manage: Update / Reinstall / Remove](#manage-update--reinstall--remove)
+13. [Uninstall (manual)](#uninstall-manual)
+14. [Security Notes](#security-notes)
+15. [License & Disclaimer](#license--disclaimer)
 
 ---
 
@@ -177,15 +178,84 @@ zorksec report               # generate a report
 | Port already in use | ZorkSec auto‑switches to a free port and prints the URL |
 | In‑browser terminal stuck "connecting" | Ensure internet access for the xterm.js/Socket.IO CDN, or use the **Native Kali terminal** option |
 | Permission errors during install | Run with `sudo` |
-| Want a clean reset | See [Uninstall](#uninstall) then re‑install |
+| Want a clean reset | Run `sudo ./manage.sh` and pick **Reinstall**, or see [Manage](#manage-update--reinstall--remove) |
 
 ---
 
-## Uninstall
+## Manage: Update / Reinstall / Remove
+The repo ships **`manage.sh`** — a single maintenance script for your Kali machine.
+Run it and pick one of three options from the menu (it opens with the ZorkSec
+banner):
+
 ```bash
-sudo rm -rf /opt/zorksec
-sudo rm -f /usr/local/bin/zorksec /usr/local/bin/tools
+cd tools                 # the cloned project folder
+sudo ./manage.sh         # shows the menu below
 ```
+
+```
+  1) Update ZorkSec      (keep my data; pull latest + reinstall code & deps)
+  2) Reinstall A to Z    (remove EVERYTHING, then a clean fresh install)
+  3) Remove completely   (wipe all data, keys & commands from this system)
+  q) Quit
+```
+
+| Option | What it does | Your data (username/password) |
+|--------|--------------|-------------------------------|
+| **1. Update** | `git pull` the latest code, then re‑run the installer (idempotent). | **Kept** |
+| **2. Reinstall** | Wipe everything, then install fresh from A→Z. | **Erased**, then a clean default user is created |
+| **3. Remove** | Completely uninstall: delete the install dir, keys, logs, and the global commands (incl. legacy copies). | **Erased** |
+
+You can also run any option directly (handy for scripts):
+```bash
+sudo ./manage.sh update            # option 1
+sudo ./manage.sh reinstall         # option 2
+sudo ./manage.sh remove            # option 3
+sudo ./manage.sh remove -y         # option 3, skip the confirmation prompt
+./manage.sh remove -n              # dry run: list what WOULD be removed
+./manage.sh -h                     # help
+```
+> `manage.sh` honours a custom `ZORKSEC_HOME` (e.g.
+> `sudo ZORKSEC_HOME=/srv/zorksec ./manage.sh remove`), resolves your real
+> (non‑root) user to clean their home folder too, and refuses unsafe paths.
+
+### What gets removed (options 2 & 3)
+| Path | Contents |
+|------|----------|
+| `/opt/zorksec/` | Database (**your username/password**), `master.key`, `secret.key`, logs, reports, `.venv`, all app files |
+| `/usr/local/bin/zorksec`, `/usr/local/bin/tools` | The global launcher commands |
+| `~/.zorksec`, `~/.local/bin/zorksec`, `~/.local/bin/tools` | Legacy/stale copies from older installs |
+
+After **Reinstall** (or a fresh install) the login resets to the default
+**`zorksec` / `zorksec`**, and you’ll be required to set a new password on first login.
+
+---
+
+## Uninstall (manual)
+If you prefer not to use `manage.sh`, you can remove everything by hand:
+```bash
+# 1) Stop any running ZorkSec process
+sudo pkill -f 'zorksec.cli' 2>/dev/null || true
+
+# 2) Remove the install dir (database with username/password, keys, logs, venv, code)
+sudo rm -rf /opt/zorksec
+
+# 3) Remove the global commands
+sudo rm -f /usr/local/bin/zorksec /usr/local/bin/tools
+
+# 4) Remove legacy/stale copies from older installs
+sudo rm -rf ~/.zorksec /root/.zorksec
+rm -f ~/.local/bin/zorksec ~/.local/bin/tools
+
+# 5) Forget the cached command path in the current shell
+hash -r
+```
+
+### Verify it's completely gone
+```bash
+which zorksec tools     # should print nothing
+ls /opt/zorksec         # should say: No such file or directory
+```
+If both come back empty, no username, password, or stored data remains.
 
 ---
 
