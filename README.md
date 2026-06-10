@@ -182,10 +182,68 @@ zorksec report               # generate a report
 ---
 
 ## Uninstall
+Removing ZorkSec deletes **all** stored data — including the SQLite database that
+holds your **username and (hashed) password**, the encryption keys, logs, reports,
+the virtual environment, and the global commands. Do this when you want a clean,
+fresh re‑install with nothing left behind.
+
+### What gets removed
+| Path | Contents |
+|------|----------|
+| `/opt/zorksec/` | Database (**your username/password**), `master.key`, `secret.key`, logs, reports, `.venv`, all app files |
+| `/usr/local/bin/zorksec`, `/usr/local/bin/tools` | The global launcher commands |
+| `~/.zorksec`, `~/.local/bin/zorksec`, `~/.local/bin/tools` | Legacy/stale copies from older installs |
+
+### Option A — one‑click uninstaller (recommended)
+The repo ships an `uninstall.sh` that stops any running server, removes every item
+above (including legacy copies), refreshes your shell, and verifies the result.
+
 ```bash
-sudo rm -rf /opt/zorksec
-sudo rm -f /usr/local/bin/zorksec /usr/local/bin/tools
+cd tools                 # the cloned project folder
+sudo ./uninstall.sh      # asks for confirmation, then removes everything
 ```
+Useful flags:
+```bash
+sudo ./uninstall.sh -y   # remove without the confirmation prompt
+sudo ./uninstall.sh -n   # dry run: show what WOULD be removed, change nothing
+./uninstall.sh -h        # help
+```
+> Honours a custom `ZORKSEC_HOME` (e.g. `sudo ZORKSEC_HOME=/srv/zorksec ./uninstall.sh`).
+
+### Option B — manual removal
+```bash
+# 1) Stop any running ZorkSec process
+sudo pkill -f 'zorksec.cli' 2>/dev/null || true
+
+# 2) Remove the install dir (database with username/password, keys, logs, venv, code)
+sudo rm -rf /opt/zorksec
+
+# 3) Remove the global commands
+sudo rm -f /usr/local/bin/zorksec /usr/local/bin/tools
+
+# 4) Remove legacy/stale copies from older installs
+sudo rm -rf ~/.zorksec /root/.zorksec
+rm -f ~/.local/bin/zorksec ~/.local/bin/tools
+
+# 5) Forget the cached command path in the current shell
+hash -r
+```
+
+### Verify it's completely gone
+```bash
+which zorksec tools     # should print nothing
+ls /opt/zorksec         # should say: No such file or directory
+```
+If both come back empty, no username, password, or stored data remains.
+
+### Then re‑install fresh
+```bash
+git pull                # get the latest version
+sudo ./install.sh
+hash -r                 # first time only, refresh the command cache
+```
+After a fresh install the login resets to the default **`zorksec` / `zorksec`**,
+and you’ll be required to set a new password on first login.
 
 ---
 
