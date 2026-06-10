@@ -70,6 +70,7 @@ _ADDITIVE_COLUMNS: dict[str, dict[str, str]] = {
         "security_answer_hash": "VARCHAR(255)",
         "recovery_failed_count": "INTEGER NOT NULL DEFAULT 0",
         "recovery_locked_until": "DATETIME",
+        "team": "VARCHAR(16) NOT NULL DEFAULT 'both'",
     },
 }
 
