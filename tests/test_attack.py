@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from zorksec.db.session import init_db, session_scope
-from zorksec.detection.attack import TACTICS, TECHNIQUES, get_technique
+from zorksec.detection.attack import TACTICS, TECHNIQUES
 from zorksec.services.attack_service import AttackService
 from zorksec.services.registry_service import RegistryService
 

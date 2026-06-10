@@ -57,7 +57,6 @@ def test_missing_commit_date_penalised():
 # ---------------------------------------------------------------------------
 # Health cache (tool_health.json) + bulk refresh
 # ---------------------------------------------------------------------------
-import datetime as _dt
 
 from zorksec.config import get_settings
 from zorksec.services.health_service import (

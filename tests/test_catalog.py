@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from zorksec.config import get_settings
 from zorksec.db.session import init_db, session_scope
 from zorksec.registry.catalog import CATALOG, catalog_by_team
 from zorksec.services.registry_service import RegistryService

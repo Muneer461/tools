@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from zorksec.services.kali_diagnostics_service import (
     STATUS_OK,
-    STATUS_SKIPPED,
     KaliCheck,
     KaliDiagnosticsService,
     KaliReport,
