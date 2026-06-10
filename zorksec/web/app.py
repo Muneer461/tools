@@ -23,6 +23,7 @@ from typing import Callable
 from flask import (
     Flask,
     abort,
+    current_app,
     redirect,
     render_template,
     request,
@@ -53,6 +54,11 @@ from zorksec.web.terminal import TerminalManager
 
 logger = get_logger(__name__)
 
+
+def _sessions_persist() -> bool:
+    return os.environ.get("ZORKSEC_PERSIST_SESSIONS", "").strip().lower() in (
+        "1", "true", "yes", "on")
+
 # Theme colours applied by templates based on the active team profile.
 THEMES = {
     "blue": {"name": "Blue Team", "accent": "#3da9fc", "bg": "#0a0f1e", "panel": "#101a33"},
@@ -65,6 +71,15 @@ def _login_required(view: Callable) -> Callable:
     @functools.wraps(view)
     def wrapped(*args, **kwargs):
         if not flask_session.get("user_id"):
+            return redirect(url_for("login"))
+        # Sessions must not survive a server restart unless explicitly opted in
+        # (ZORKSEC_PERSIST_SESSIONS=1). The signed session cookie stays valid
+        # across restarts because the SECRET_KEY is persisted on disk; we bind
+        # each session to a per-process boot id and reject stale ones so a
+        # restart forces re-authentication.
+        boot_id = current_app.config.get("ZORKSEC_BOOT_ID")
+        if not _sessions_persist() and flask_session.get("boot_id") != boot_id:
+            flask_session.clear()
             return redirect(url_for("login"))
         if flask_session.get("must_change_password") and request.endpoint not in (
             "change_password", "logout", "static",
@@ -100,6 +115,11 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
     # restarts instead of being invalidated by a freshly minted key each boot.
     app.config["SECRET_KEY"] = settings.resolve_secret_key()
     app.config["ZORKSEC_SETTINGS"] = settings
+    # Per-process boot id: authenticated sessions are stamped with this at
+    # login and rejected after a restart (new process => new id), so a server
+    # restart forces re-authentication even though the SECRET_KEY (and thus the
+    # signed cookie) persists on disk. Opt out with ZORKSEC_PERSIST_SESSIONS=1.
+    app.config["ZORKSEC_BOOT_ID"] = secrets.token_hex(16)
     # CSRF protection is on by default; tests may disable it explicitly.
     app.config.setdefault("CSRF_ENABLED", True)
     # Harden the session cookie.
@@ -177,6 +197,8 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
             return False
         if flask_session.get("must_change_password"):
             return False
+        if not _sessions_persist() and flask_session.get("boot_id") != app.config["ZORKSEC_BOOT_ID"]:
+            return False
         return True
 
     # ------------------------------------------------------------------ auth
@@ -195,6 +217,7 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
                     flask_session["user_id"] = result.user_id
                     flask_session["username"] = result.username
                     flask_session["must_change_password"] = result.must_change_password
+                    flask_session["boot_id"] = app.config["ZORKSEC_BOOT_ID"]
                     flask_session.setdefault("team", "both")
                     return redirect(url_for("dashboard"))
                 except AuthError as exc:
@@ -293,7 +316,13 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
     @app.route("/security-question", methods=["GET", "POST"])
     @_login_required
     def security_question():
-        """Let a logged-in user set/update their recovery question + answer."""
+        """Let a logged-in user set/update their recovery question + answer.
+
+        Changing recovery credentials requires re-verifying the *current
+        password* (identity confirmation), so an unattended/hijacked session
+        cannot silently rewrite the account-recovery question or answer. Every
+        attempt - success or failure - is written to the audit log.
+        """
         error = None
         saved = False
         current = None
@@ -301,15 +330,26 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
         with session_scope(settings) as db:
             current = AuthService(db, settings).get_security_question(username)
         if request.method == "POST":
+            current_password = request.form.get("current_password", "")
             q = request.form.get("question", "")
             a = request.form.get("answer", "")
             with session_scope(settings) as db:
-                try:
-                    AuthService(db, settings).set_security_question(username, q, a)
-                    saved = True
-                    current = q.strip()
-                except AuthError as exc:
-                    error = str(exc)
+                auth = AuthService(db, settings)
+                user = auth._users.get_by_username(username)
+                if user is None or not auth.verify_password(
+                        current_password, user.password_hash):
+                    AuditRepository(db).record(
+                        "security_question_set", username=username,
+                        detail="rejected: password verification failed",
+                        success=False)
+                    error = "Password verification failed."
+                else:
+                    try:
+                        auth.set_security_question(username, q, a)
+                        saved = True
+                        current = q.strip()
+                    except AuthError as exc:
+                        error = str(exc)
         return render_template("security_question.html", theme=theme(),
                                error=error, saved=saved, current=current)
 
@@ -660,6 +700,59 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
             except ValueError as exc:
                 return {"error": str(exc)}, 400
         return {"path": path}
+
+    @app.route("/api/diagnostics/download")
+    @_login_required
+    def api_diagnostics_download():
+        """Stream the diagnostic report to the browser as a file download.
+
+        Unlike ``/api/diagnostics/export`` (which writes a file on the server
+        and returns its path), this renders the report in-memory and returns it
+        as an attachment so the user actually receives a downloadable file in
+        the browser. Supports the always-available text formats plus any
+        optional ones (docx/pdf) installed on the host.
+        """
+        import io as _io
+
+        from flask import send_file
+        from zorksec.services.diagnostic_service import DiagnosticService
+        from zorksec.services import report_service as _rsvc
+
+        fmt = (request.args.get("format", "json") or "json").lower()
+        # "txt" is a friendly alias for the markdown text renderer.
+        render_fmt = "markdown" if fmt == "txt" else fmt
+
+        svc = DiagnosticService()
+        report = svc.run_full_diagnostic()
+        context = {
+            "summary": f"System diagnostic - overall status: {report.overall.upper()} "
+                       f"({report.counts})",
+            "findings": [f"[{c.status.upper()}] {c.name}: {c.detail}"
+                         for c in report.checks],
+            "remediation": svc.root_cause_analysis(report),
+        }
+        doc = _rsvc.build_template(
+            "assessment", "ZorkSec System Diagnostic", context)
+        try:
+            content, ext = _rsvc.render(doc, render_fmt)
+        except ValueError as exc:
+            return {"error": str(exc)}, 400
+
+        if fmt == "txt":
+            ext = "txt"
+        mimetypes = {
+            "json": "application/json", "csv": "text/csv",
+            "txt": "text/plain", "md": "text/markdown",
+            "html": "text/html", "pdf": "application/pdf",
+            "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        }
+        stamp = _dt.datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+        return send_file(
+            _io.BytesIO(content),
+            mimetype=mimetypes.get(ext, "application/octet-stream"),
+            as_attachment=True,
+            download_name=f"zorksec-diagnostic-{stamp}.{ext}",
+        )
 
     # ------------------------------------------------------------------ Kali diagnostics
     @app.route("/kali-diagnostics")

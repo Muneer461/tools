@@ -222,8 +222,9 @@ def test_forgot_password_unknown_user_shows_error(client):
 
 def test_security_question_set_then_recover(client):
     _login_full(client)
-    # Set a recovery question.
+    # Set a recovery question (now requires current-password confirmation).
     resp = client.post("/security-question", data={
+        "current_password": "StrongPass1!",
         "question": "First pet?", "answer": "Whiskers"})
     assert resp.status_code == 200
     assert "Saved" in resp.get_data(as_text=True)
@@ -599,3 +600,91 @@ def test_default_password_rejected_after_change(client):
     fresh.post("/login", data={"username": "zorksec", "password": "zorksec"})
     # Default creds no longer grant access.
     assert fresh.get("/").status_code == 302
+
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: security-question password verification, session restart, export
+# ---------------------------------------------------------------------------
+def test_security_question_requires_correct_password(client):
+    """Changing the recovery question without the current password is rejected."""
+    _login_full(client)  # password is now "StrongPass1!"
+    # Wrong password -> rejected, no change saved.
+    resp = client.post("/security-question", data={
+        "current_password": "WrongPass!",
+        "question": "New question?", "answer": "newanswer"})
+    body = resp.get_data(as_text=True)
+    assert resp.status_code == 200
+    assert "Password verification failed." in body
+    assert "Saved" not in body
+    # The forgot flow must NOT expose the unsaved question.
+    client.get("/logout")
+    step1 = client.post("/forgot-password", data={"username": "zorksec"})
+    assert "New question?" not in step1.get_data(as_text=True)
+
+
+def test_security_question_correct_password_saves(client):
+    _login_full(client)
+    resp = client.post("/security-question", data={
+        "current_password": "StrongPass1!",
+        "question": "City of birth?", "answer": "metropolis"})
+    assert "Saved" in resp.get_data(as_text=True)
+
+
+def test_session_does_not_survive_server_restart(zorksec_home):
+    """A login cookie minted by one process must be rejected after a restart.
+
+    The SECRET_KEY is persisted on disk, so the signed cookie stays
+    cryptographically valid across restarts. The per-process boot id binds a
+    session to the process that issued it; a "restarted" app (new process =
+    new boot id) must redirect the reused cookie to the login page.
+    """
+    settings = get_settings()
+
+    # First process: log in fully and keep the session cookie.
+    app1, _ = create_app(settings)
+    app1.config.update(TESTING=True, CSRF_ENABLED=False)
+    c1 = app1.test_client()
+    c1.post("/login", data={"username": "zorksec", "password": "zorksec"})
+    c1.post("/change-password", data={
+        "old_password": "zorksec", "new_password": "StrongPass1!",
+        "confirm_password": "StrongPass1!",
+        "question": "First pet?", "answer": "fluffy"})
+    assert c1.get("/").status_code == 200  # authenticated in this process
+
+    # Carry the signed session cookie over to a brand-new app (= restart).
+    def _session_cookie_value(c):
+        try:
+            ck = c.get_cookie("session")  # Werkzeug >= 2.3 returns a Cookie obj
+            if ck is not None:
+                return getattr(ck, "value", ck)
+        except (AttributeError, TypeError):
+            pass
+        return None
+
+    cookie_value = _session_cookie_value(c1)
+
+    app2, _ = create_app(settings)  # new process boot id
+    app2.config.update(TESTING=True, CSRF_ENABLED=False)
+    c2 = app2.test_client()
+    assert cookie_value, "expected a session cookie from the first process"
+    c2.set_cookie("session", cookie_value)
+    resp = c2.get("/")
+    assert resp.status_code == 302
+    assert "/login" in resp.headers["Location"]
+
+
+def test_diagnostics_download_returns_attachment(client):
+    _login_full(client)
+    for fmt, ctype in (("json", "application/json"),
+                       ("csv", "text/csv"),
+                       ("txt", "text/plain")):
+        r = client.get("/api/diagnostics/download?format=" + fmt)
+        assert r.status_code == 200, fmt
+        assert "attachment" in r.headers.get("Content-Disposition", "")
+        assert ctype in r.headers.get("Content-Type", "")
+        assert len(r.data) > 0
+    # JSON download must be valid, populated JSON.
+    import json as _json
+    payload = _json.loads(client.get("/api/diagnostics/download?format=json").data)
+    assert payload["title"] == "ZorkSec System Diagnostic"
