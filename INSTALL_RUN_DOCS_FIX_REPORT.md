@@ -140,3 +140,94 @@ a static + dynamic analysis of the CSS hit-testing behaviour. The
 `pointer-events`/stacking fix is standard, well-defined browser behaviour, but a
 final click-through in a real Kali browser is still recommended as the last
 confirmation before sign-off.
+
+
+---
+
+## Real-browser proof (Chromium via Playwright)
+
+The previous section relied on route-level evidence and CSS analysis. To satisfy
+the Phase 3/4/5 requirement for genuine browser hit-testing, the rendered
+dashboard (real `zorksec.css` + `dashboard.js`) was loaded in **real Chromium**
+(Playwright `chromium`, Blink engine) and probed with `document.elementFromPoint`
+and real mouse clicks.
+
+> Note on the sandbox: this is a generic Linux image, not Kali, and Chromium's
+> shared-library deps (`libnss3`, `libnspr4`, ...) were not present. They were
+> installed/extracted (`dnf` + `rpm2archive`) and supplied via `LD_LIBRARY_PATH`.
+> The browser engine doing the layout and hit-testing is real Chromium/Blink.
+
+### After the fix (current code)
+
+| Probe | Result |
+|-------|--------|
+| `elementFromPoint(centre of Install button)` | `BUTTON.tool-btn install`, `data-action="tool-install"`, `hitsButton:true` |
+| `elementFromPoint(centre of Run button)` | `BUTTON.tool-btn run`, `data-action="tool-run"`, `hitsButton:true` |
+| `elementFromPoint(centre of Docs button)` | `BUTTON.tool-btn docs`, `data-action="tool-docs"`, `hitsButton:true` |
+| real click **Install** | `window.open("/terminal?tool=bloodhound&action=install")` |
+| real click **Docs** | `window.open("/usage?tool=bloodhound")` |
+| real click **Run** | run-modal computed `display: flex` (modal opens) |
+| console / page errors | none |
+
+These are exactly the URL formats required by Phase 5
+(`/terminal?tool=...&action=install`, `/terminal?tool=...&action=run` via the
+modal's "browser terminal" choice, and `/usage?tool=...`).
+
+### Regression reproduction (overlay re-enabled)
+
+Re-enabling `pointer-events` on `.tool-card::before` (reverting the fix) in the
+same real browser:
+
+| Probe | Result |
+|-------|--------|
+| `elementFromPoint(centre of Install button)` | `DIV.tool-card` (the overlay host), `hitsButton:false` |
+| real click on that pixel | `window.open` called **0 times** — nothing happens, no error |
+
+This reproduces the originally reported defect precisely and confirms the fix is
+both necessary and sufficient.
+
+---
+
+## Phase 8 — Category icon modernization
+
+Every catalog category previously rendered with the same generic
+`fa-folder` glyph in the sidebar, and every tool card used a generic
+`fa-shield-halved` logo. Both now use a distinctive, category-appropriate icon
+from the single icon library already bundled with the app (Font Awesome Free
+**6.5.1**).
+
+**Implementation**
+- New module `zorksec/web/category_icons.py` maps each of the **23** catalog
+  categories (plus canonical-name aliases) to a verified FA6 Free icon, with a
+  non-folder default (`fa-folder-tree`) for any unmapped value.
+- Registered as a Jinja global (`category_icon`) in `create_app` (`app.py`).
+- `dashboard.html`: sidebar category buttons and tool-card logos now call
+  `category_icon(...)`.
+
+**Mapping (catalog categories)**
+
+| Category | Icon | | Category | Icon |
+|---|---|---|---|---|
+| Information Gathering | `fa-magnifying-glass` | | Threat Intelligence | `fa-brain` |
+| Network Monitoring | `fa-satellite-dish` | | Vulnerability Scanning | `fa-bug` |
+| Web Application | `fa-globe` | | Reverse Engineering | `fa-gears` |
+| OSINT for SOC | `fa-user-secret` | | Detection Engineering | `fa-binoculars` |
+| Social Media OSINT | `fa-share-nodes` | | SOC Utilities | `fa-toolbox` |
+| Malware Analysis | `fa-virus` | | Log Analysis | `fa-file-lines` |
+| Forensics / DFIR | `fa-microscope` | | SIEM / Logging | `fa-gauge-high` |
+| Threat Hunting | `fa-crosshairs` | | Phishing Analysis | `fa-envelope-open-text` |
+| Incident Response | `fa-triangle-exclamation` | | Post Exploitation | `fa-skull` |
+| Wireless Security | `fa-wifi` | | Active Directory | `fa-building` |
+| Password Auditing | `fa-key` | | Exploitation | `fa-bolt` |
+| Other | `fa-shapes` | | | |
+
+**Verification**
+- All icon classes confirmed present in the vendored `all.min.css`.
+- Rendered dashboard HTML: **0** category nav buttons use `fa-folder`; all 101
+  tool-card logos use a category-specific icon (0 generic shields remain).
+- Real Chromium: the Font Awesome webfont loads (`font-family: "Font Awesome 6
+  Free"`) and the glyphs paint; a full-page screenshot was captured as visual
+  evidence (`_verify/dashboard_icons.png`).
+- The click hit-test was re-run after the template/icon changes — Install/Run/
+  Docs still hit-test to their buttons and generate the correct URLs (no
+  regression from the icon work).

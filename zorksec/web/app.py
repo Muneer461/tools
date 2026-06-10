@@ -131,6 +131,10 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
     # Make ``csrf_token()`` callable from every template.
     app.jinja_env.globals["csrf_token"] = _csrf_token
 
+    # Per-category cybersecurity icon (replaces the old generic folder glyph).
+    from zorksec.web.category_icons import category_icon
+    app.jinja_env.globals["category_icon"] = category_icon
+
     # Cache-busting stamp for static assets: derived from the CSS file's mtime
     # so a stale browser cache can never keep serving an old stylesheet/JS
     # after an upgrade (a real cause of "the new UI didn't take effect").
