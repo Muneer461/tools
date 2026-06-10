@@ -110,18 +110,24 @@ TROUBLESHOOTING
 * Reset everything: sudo rm -rf /opt/zorksec, then re-run sudo ./install.sh.
 
 --------------------------------------------------------------
-UNINSTALL (remove everything for a clean re-install)
+MANAGE / UPDATE / REINSTALL / UNINSTALL
 --------------------------------------------------------------
-One-click (recommended) - stops the server, removes the install dir
-(database with your username/password, keys, logs, venv), the global
-commands, and any legacy copies, then verifies the result:
+Use the all-in-one maintenance script (shows a ZorkSec banner + menu):
 
     cd tools
-    sudo ./uninstall.sh          # asks to confirm
-    sudo ./uninstall.sh -y       # no prompt
-    sudo ./uninstall.sh -n       # dry run (show, change nothing)
+    sudo ./manage.sh
 
-Manual equivalent:
+Menu options:
+    1) Update ZorkSec      - keep your data; pull latest + reinstall code
+    2) Reinstall A to Z    - remove EVERYTHING, then a clean fresh install
+    3) Remove completely   - wipe all data, keys & commands from the system
+
+Run an option directly (non-interactive):
+    sudo ./manage.sh update
+    sudo ./manage.sh reinstall
+    sudo ./manage.sh remove          # add -y to skip the prompt, -n for dry run
+
+Manual removal (if you prefer not to use manage.sh):
     sudo pkill -f 'zorksec.cli' 2>/dev/null || true
     sudo rm -rf /opt/zorksec
     sudo rm -f /usr/local/bin/zorksec /usr/local/bin/tools
