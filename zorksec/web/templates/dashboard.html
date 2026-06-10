@@ -60,7 +60,7 @@
       <button class="nav-item active" data-action="filter" data-cat="__all__"><i class="fas fa-th-large"></i> All tools</button>
       <button class="nav-item" data-action="filter" data-cat="__installed__"><i class="fas fa-check-circle"></i> Installed tools</button>
       {% for c in categories %}
-      <button class="nav-item" data-action="filter" data-cat="{{ c }}"><i class="fas fa-folder"></i> {{ c }}</button>
+      <button class="nav-item" data-action="filter" data-cat="{{ c }}"><i class="fas {{ category_icon(c) }}"></i> {{ c }}</button>
       {% endfor %}
 
       <div class="section-label">Platform</div>
@@ -139,7 +139,7 @@
       <div class="tool-card" data-cat="{{ t.category }}" data-installed="{{ '1' if t.installed else '0' }}" data-slug="{{ t.slug }}" data-name="{{ t.name }}">
         <div class="tool-header">
           <div><div class="tool-name">{{ t.name }}</div></div>
-          <div class="tool-logo"><i class="fas fa-shield-halved"></i></div>
+          <div class="tool-logo" title="{{ t.category }}"><i class="fas {{ category_icon(t.category) }}"></i></div>
         </div>
         <div class="tool-badges">
           <span class="tool-badge {{ t.team }}">{{ t.team }}</span>
