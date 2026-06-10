@@ -6,7 +6,14 @@
   <title>{% block title %}ZorkSec{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='zorksec.css') }}?v={{ asset_v }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/fontawesome/css/all.min.css') }}?v={{ asset_v }}">
-  {% if theme %}
+  {% if theme_vars %}
+  <style>
+    :root {
+      {% for k, v in theme_vars.items() %}{% if k != 'name' %}{{ k }}: {{ v }};
+      {% endif %}{% endfor %}
+    }
+  </style>
+  {% elif theme %}
   <style>
     :root {
       --accent: {{ theme.accent }};
