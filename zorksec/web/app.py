@@ -48,10 +48,16 @@ from zorksec.services.registry_service import RegistryService
 from zorksec.repositories.audit_repository import AuditRepository
 from zorksec.repositories.history_repository import HistoryRepository
 from zorksec.repositories.tool_repository import ToolRepository
+from zorksec.repositories.user_repository import UserRepository
 from zorksec.utils.logging import get_logger
 from zorksec.web.terminal import TerminalManager
 
 logger = get_logger(__name__)
+
+# Ensures the browser auto-launch happens at most once per process, even if a
+# reloader child or a double call ever triggers it again (prevents the "second
+# tab with a localhost error" startup glitch).
+_BROWSER_LAUNCHED = False
 
 # Theme colours applied by templates based on the active team profile.
 THEMES = {
@@ -169,7 +175,21 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
         return flask_session.get("team", "both")
 
     def theme() -> dict:
+        # Legacy theme dict (accent/bg/panel + name) kept for templates that
+        # read theme.name / theme.accent directly.
         return THEMES.get(current_team(), THEMES["both"])
+
+    @app.context_processor
+    def _inject_theme_vars():
+        """Expose the full CSS-variable palette to every template.
+
+        ``base.html`` emits these into a ``:root`` block so selecting a team
+        re-skins the entire UI (sidebar, cards, buttons, borders, header,
+        modals, terminal accent, diagnostics) - not just the dropdown.
+        """
+        from zorksec.web.themes import theme_vars
+        return {"theme_vars": theme_vars(current_team()),
+                "active_team": current_team()}
 
     def _socket_authenticated() -> bool:
         """True when the Socket.IO client has a valid, fully-provisioned session."""
@@ -195,7 +215,12 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
                     flask_session["user_id"] = result.user_id
                     flask_session["username"] = result.username
                     flask_session["must_change_password"] = result.must_change_password
-                    flask_session.setdefault("team", "both")
+                    # Restore the user's saved team theme (persists across
+                    # logout/login/restart); fall back to prior session/default.
+                    saved_team = getattr(
+                        auth._users.get_by_username(result.username), "team", None)
+                    flask_session["team"] = saved_team if saved_team in THEMES \
+                        else flask_session.get("team", "both")
                     return redirect(url_for("dashboard"))
                 except AuthError as exc:
                     error = str(exc)
@@ -320,6 +345,14 @@ def create_app(settings: Settings | None = None) -> tuple[Flask, SocketIO]:
         team = request.form.get("team", "both")
         if team in THEMES:
             flask_session["team"] = team
+            # Persist to the user profile so the theme survives logout/restart
+            # (not just the current session / LocalStorage).
+            username = flask_session.get("username")
+            if username:
+                with session_scope(settings) as db:
+                    user = UserRepository(db).get_by_username(username)
+                    if user is not None:
+                        user.team = team
         return redirect(url_for("dashboard"))
 
     # ------------------------------------------------------------------ pages
@@ -1008,25 +1041,37 @@ def _whitelist_bound_origins(host: str, port: int) -> None:
 
 
 def _open_browser_when_ready(url: str, host: str, port: int) -> None:
-    """Open the default browser once the server is accepting connections.
+    """Open the default browser once - and only once - after the server is up.
 
-    Runs in a short-lived daemon thread so it never blocks the server. Failures
-    (e.g. headless host) are silently ignored - the URL is always printed too.
+    Runs in a short-lived daemon thread so it never blocks the server. A
+    module-level guard ensures a single launch even if this is ever called
+    twice (e.g. a stray reloader child), preventing the "second tab with a
+    localhost / connection-refused error" reported at startup. Failures (e.g.
+    headless host) are silently ignored - the URL is always printed too.
     """
     import socket
     import threading
     import time
     import webbrowser
 
+    global _BROWSER_LAUNCHED
+    if _BROWSER_LAUNCHED:
+        return
+    _BROWSER_LAUNCHED = True
+
     def _worker() -> None:
-        for _ in range(40):  # up to ~10s
+        # Wait until the server actually accepts connections so the browser
+        # never loads before the app is ready (no premature localhost error).
+        for _ in range(60):  # up to ~15s
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
                 sock.settimeout(0.25)
                 if sock.connect_ex((host, port)) == 0:
                     break
             time.sleep(0.25)
+        else:
+            return  # never came up; don't open a broken tab
         try:
-            webbrowser.open(url)
+            webbrowser.open_new_tab(url)
         except Exception:
             pass
 
@@ -1069,6 +1114,16 @@ def run_web(host: str | None = None, port: int | None = None,
         logger.info("Port %s busy; using free port %s instead.", preferred_port, bind_port)
 
     url = f"http://{bind_host}:{bind_port}"
+
+    # Startup status sequence (Issue 4): show progress so a slow boot never
+    # looks like a hang, and the browser only opens once everything is ready.
+    print("ZorkSec starting...")
+    print("  [ OK ] Database initialised")
+    print("  [ OK ] Tool registry loaded")
+    print("  [ OK ] Socket.IO initialised")
+    print("  [ OK ] Flask app ready")
+    print(f"  [ OK ] Bound to {url}")
+    print("  System ready.")
     print(f"ZorkSec dashboard: {url}  (Ctrl+C to stop)")
     if bind_port != preferred_port:
         print(f"(port {preferred_port} was busy - automatically switched to {bind_port})")
@@ -1086,7 +1141,11 @@ def run_web(host: str | None = None, port: int | None = None,
         logger.warning("Could not start background health refresh: %s", exc)
 
     try:
-        socketio.run(app, host=bind_host, port=bind_port)
+        # use_reloader=False is critical: the Werkzeug/Flask reloader forks a
+        # child process, which would run startup (and the browser launch) a
+        # second time -> a duplicate tab pointing at a not-yet-ready server.
+        socketio.run(app, host=bind_host, port=bind_port,
+                     debug=False, use_reloader=False)
     except KeyboardInterrupt:
         print("\nShutting down ZorkSec dashboard.")
     return 0
