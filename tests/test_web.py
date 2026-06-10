@@ -604,6 +604,7 @@ def test_default_password_rejected_after_change(client):
 
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # Phase 2: security-question password verification, session restart, export
 # ---------------------------------------------------------------------------
 def test_security_question_requires_correct_password(client):
@@ -688,3 +689,81 @@ def test_diagnostics_download_returns_attachment(client):
     import json as _json
     payload = _json.loads(client.get("/api/diagnostics/download?format=json").data)
     assert payload["title"] == "ZorkSec System Diagnostic"
+
+
+# ---------------------------------------------------------------------------
+# Phase 2.1: theme engine, theme persistence, single browser launch
+# ---------------------------------------------------------------------------
+def _theme_root_block(html: str) -> str:
+    import re
+    m = re.search(r":root\s*\{(.*?)\}", html, re.S)
+    return m.group(1) if m else ""
+
+
+def test_red_team_applies_full_red_palette(client):
+    _login_full(client)
+    client.post("/profile", data={"team": "red"})
+    root = _theme_root_block(client.get("/").get_data(as_text=True))
+    assert "#ff3b4e" in root          # red primary accent injected
+    assert "#14070a" in root          # red background injected
+    assert "#805aff" not in root      # no purple bleed-through
+
+
+def test_blue_team_applies_full_blue_palette(client):
+    _login_full(client)
+    client.post("/profile", data={"team": "blue"})
+    root = _theme_root_block(client.get("/").get_data(as_text=True))
+    assert "#2f81f7" in root          # blue primary accent
+    assert "#ff3b4e" not in root      # not red
+
+
+def test_theme_persists_across_logout_login(client):
+    _login_full(client)
+    client.post("/profile", data={"team": "red"})
+    client.get("/logout")
+    client.post("/login", data={"username": "zorksec", "password": "StrongPass1!"})
+    assert "#ff3b4e" in _theme_root_block(client.get("/").get_data(as_text=True))
+
+
+def test_theme_persists_across_restart_via_db(zorksec_home):
+    """Team theme is stored on the user record, so a fresh app instance
+    (= restart) still renders it after the user logs back in."""
+    settings = get_settings()
+    app1, _ = create_app(settings)
+    app1.config.update(TESTING=True, CSRF_ENABLED=False)
+    c1 = app1.test_client()
+    c1.post("/login", data={"username": "zorksec", "password": "zorksec"})
+    c1.post("/change-password", data={
+        "old_password": "zorksec", "new_password": "StrongPass1!",
+        "confirm_password": "StrongPass1!", "question": "q", "answer": "aa"})
+    c1.post("/profile", data={"team": "red"})
+
+    app2, _ = create_app(settings)  # simulate restart (new process)
+    app2.config.update(TESTING=True, CSRF_ENABLED=False)
+    c2 = app2.test_client()
+    c2.post("/login", data={"username": "zorksec", "password": "StrongPass1!"})
+    assert "#ff3b4e" in _theme_root_block(c2.get("/").get_data(as_text=True))
+
+
+def test_browser_launch_happens_at_most_once(monkeypatch):
+    """_open_browser_when_ready must guard against a duplicate launch
+    (the reloader-child / double-call cause of the 'second localhost tab')."""
+    import threading as _t
+
+    import zorksec.web.app as appmod
+
+    monkeypatch.setattr(appmod, "_BROWSER_LAUNCHED", False, raising=False)
+    started = []
+
+    class _FakeThread:
+        def __init__(self, *a, **k):
+            started.append(1)
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(_t, "Thread", _FakeThread)
+
+    appmod._open_browser_when_ready("http://127.0.0.1:9", "127.0.0.1", 9)
+    appmod._open_browser_when_ready("http://127.0.0.1:9", "127.0.0.1", 9)
+    assert len(started) == 1, "browser launch thread should start only once"
