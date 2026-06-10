@@ -18,6 +18,9 @@
     {% endif %}
     <form method="post">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="password" name="current_password" autocomplete="current-password"
+             placeholder="Confirm your current password"
+             style="width:100%; margin-bottom:10px;" required>
       <input name="question" placeholder="e.g. What was the name of your first pet?"
              value="{{ current or '' }}" style="width:100%; margin-bottom:10px;">
       <input name="answer" placeholder="Your secret answer"
