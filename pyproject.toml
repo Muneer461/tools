@@ -36,3 +36,12 @@ include = ["zorksec*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+
+[tool.ruff.lint.per-file-ignores]
+# Test modules deliberately import after ``pytest.importorskip(...)`` guards and
+# use mid-file section imports, both of which trip E402 ("import not at top").
+# These placements are intentional, so E402 is not meaningful for tests.
+"tests/*" = ["E402"]
