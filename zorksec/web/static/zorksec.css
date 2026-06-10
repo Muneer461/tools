@@ -209,6 +209,7 @@ select option { background: #0d0d24; color: var(--text-primary); }
 .section-title h3 { font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
 .section-title h3 i { color: var(--purple-primary); }
 .runner { display: flex; gap: 8px; min-width: 280px; flex: 1; max-width: 520px; }
+.tool-search { flex: 0 1 340px; min-width: 200px; max-width: 380px; }
 
 /* Tools grid */
 .tools-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin-bottom: 24px; }
