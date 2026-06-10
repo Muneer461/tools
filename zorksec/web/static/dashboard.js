@@ -26,22 +26,44 @@
     openTab("/usage?tool=" + encodeURIComponent(slug));
   }
 
-  // ---- category / installed filtering ------------------------------------
-  function applyFilter(cat) {
-    document.querySelectorAll(".sidebar .nav-item[data-cat]").forEach(function (b) {
-      b.classList.toggle("active", b.dataset.cat === cat);
-    });
+  // ---- category / installed filtering + text search ----------------------
+  var currentCat = "__all__";
+  var currentQuery = "";
+
+  function cardMatchesCat(card, cat) {
+    if (cat === "__all__") return true;
+    if (cat === "__installed__") return card.dataset.installed === "1";
+    return card.dataset.cat === cat;
+  }
+  function cardMatchesQuery(card, q) {
+    if (!q) return true;
+    var desc = card.querySelector(".tool-desc");
+    var hay = ((card.dataset.name || "") + " " +
+               (card.dataset.slug || "") + " " +
+               (card.dataset.cat || "") + " " +
+               (desc ? desc.textContent : "")).toLowerCase();
+    return hay.indexOf(q) !== -1;
+  }
+  function renderTools() {
     var shown = 0;
     document.querySelectorAll("#tool-grid .tool-card").forEach(function (card) {
-      var visible;
-      if (cat === "__all__") visible = true;
-      else if (cat === "__installed__") visible = card.dataset.installed === "1";
-      else visible = card.dataset.cat === cat;
+      var visible = cardMatchesCat(card, currentCat) && cardMatchesQuery(card, currentQuery);
       card.style.display = visible ? "" : "none";
       if (visible) shown++;
     });
     var empty = document.getElementById("tool-empty");
     if (empty) empty.style.display = (shown === 0) ? "" : "none";
+  }
+  function applyFilter(cat) {
+    currentCat = cat;
+    document.querySelectorAll(".sidebar .nav-item[data-cat]").forEach(function (b) {
+      b.classList.toggle("active", b.dataset.cat === cat);
+    });
+    renderTools();
+  }
+  function applySearch(q) {
+    currentQuery = (q || "").trim().toLowerCase();
+    renderTools();
   }
 
   // ---- run modal ----------------------------------------------------------
@@ -160,6 +182,14 @@
   });
 
   function init() {
+    var search = document.getElementById("tool-search");
+    if (search) {
+      search.addEventListener("input", function () { applySearch(search.value); });
+      // Pressing Escape clears the search and restores the current category view.
+      search.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") { search.value = ""; applySearch(""); }
+      });
+    }
     var ai = document.getElementById("ai-input");
     if (ai) ai.addEventListener("keydown", function (e) {
       if (e.key === "Enter") askAi();

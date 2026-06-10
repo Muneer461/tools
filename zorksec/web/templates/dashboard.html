@@ -128,7 +128,12 @@
     </div>
 
     <!-- Tools (real catalog) -->
-    <div class="section-title"><h3><i class="fas fa-tools"></i> Cybersecurity Tools</h3></div>
+    <div class="section-title">
+      <h3><i class="fas fa-tools"></i> Cybersecurity Tools</h3>
+      <input id="tool-search" class="tool-search" type="search" autocomplete="off"
+             aria-label="Search tools"
+             placeholder="Search tools by name, category, or keyword…">
+    </div>
     <div class="tools-grid" id="tool-grid">
       {% for t in tools %}
       <div class="tool-card" data-cat="{{ t.category }}" data-installed="{{ '1' if t.installed else '0' }}" data-slug="{{ t.slug }}" data-name="{{ t.name }}">
